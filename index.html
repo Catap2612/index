@@ -33,7 +33,7 @@ h3{margin:18px 0 4px}.ms{font-size:13px;color:#4a5a66}
 <main id=m></main>
 <nav><button data-a=nav data-v=list id=n1>Transformadores</button><button data-a=nav data-v=data id=n2>Datos</button></nav>
 <script>/* NÚCLEO: estado global, constantes y utilidades puras. */
-const ESQUEMA=1,APP_VERSION='1.2.1'; // ESQUEMA: versión del contrato de datos (ver docs/ESQUEMA_DATOS.md)
+const ESQUEMA=1,APP_VERSION='1.3.0'; // ESQUEMA: versión del contrato de datos (ver docs/ESQUEMA_DATOS.md)
 const $=s=>document.querySelector(s),m=$('#m');
 let db,S={trafos:[],inv:[],reg:[],usuario:''},RM=new Map,V={v:'list',p:null,q:''},d=null,GP=null,ZOOM=0.0008;
 const LBL={coincide:'Coincide',novedad:'Con novedad',no_encontrada:'No encontrada',nueva:'Nueva',otro_trafo:'De otro trafo',sin_serie:'Sin serie'};
@@ -43,7 +43,7 @@ const num=v=>{const n=parseFloat(String(v).replace(',','.'));return isFinite(n)?
 </script>
 <script>/* DATOS: única puerta de acceso a IndexedDB. Esquema v1; nuevas versiones se migran en onupgradeneeded. */
 /* ---------- IndexedDB ---------- */
-function open(){return new Promise((ok,ko)=>{const r=indexedDB.open('apterreno',1);r.onupgradeneeded=()=>{const x=r.result;x.createObjectStore('trafos',{keyPath:'codigo'});x.createObjectStore('inv',{keyPath:'_k'});x.createObjectStore('reg',{keyPath:'id'});x.createObjectStore('fotos',{keyPath:'id'});x.createObjectStore('meta',{keyPath:'k'})};r.onsuccess=()=>{db=r.result;ok()};r.onerror=()=>ko(r.error)})}
+function open(){return new Promise((ok,ko)=>{const r=indexedDB.open('apterreno',2);r.onupgradeneeded=()=>{const x=r.result;for(const[n,k]of[['trafos','codigo'],['inv','_k'],['reg','id'],['fotos','id'],['meta','k'],['mapas','id']])if(!x.objectStoreNames.contains(n))x.createObjectStore(n,{keyPath:k})};r.onsuccess=()=>{db=r.result;ok()};r.onerror=()=>ko(r.error)})}
 const rq=r=>new Promise((ok,ko)=>{r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error)});
 const st=(s,w)=>db.transaction(s,w?'readwrite':'readonly').objectStore(s);
 const all=s=>rq(st(s).getAll()),put=(s,v)=>rq(st(s,1).put(v)),get=(s,k)=>rq(st(s).get(k)),del=(s,k)=>rq(st(s,1).delete(k)),clr=s=>rq(st(s,1).clear());
@@ -64,6 +64,44 @@ const h=new DataView(new ArrayBuffer(30));h.setUint32(0,0x04034b50,1);h.setUint1
 const e=new DataView(new ArrayBuffer(46));e.setUint32(0,0x02014b50,1);e.setUint16(4,20,1);e.setUint16(6,20,1);e.setUint16(8,0x800,1);e.setUint16(12,tm,1);e.setUint16(14,dt,1);e.setUint32(16,c,1);e.setUint32(20,s,1);e.setUint32(24,s,1);e.setUint16(28,n.length,1);e.setUint32(42,off,1);cd.push(e.buffer,n);off+=30+n.length+s}
 const cs=cd.reduce((a,b)=>a+b.byteLength,0),z=new DataView(new ArrayBuffer(22));z.setUint32(0,0x06054b50,1);z.setUint16(8,files.length,1);z.setUint16(10,files.length,1);z.setUint32(12,cs,1);z.setUint32(16,off,1);
 return new Blob([...parts,...cd,z.buffer],{type:'application/zip'})}
+</script>
+<script>/* SERVICIO DE MAPA DE FONDO: teselas XYZ (z/x/y) desde un paquete ZIP cargado en el teléfono (sin conexión) o desde OpenStreetMap en línea.
+   Es una capa independiente del inventario: se puede cambiar o actualizar sin tocar luminarias ni transformadores. */
+const FONDO={modo:'ninguno',zmin:0,zmax:19,n:0,nombre:'',atrib:'',blob:null,idx:null,redibujar:null,cache:new Map,_r:0};
+const tilesX=(g,z)=>Math.floor((g+180)/360*2**z);
+const tilesY=(a,z)=>{const r=a*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*2**z)};
+const tLng=(x,z)=>x/2**z*360-180;
+const tLat=(y,z)=>Math.atan(Math.sinh(Math.PI*(1-2*y/2**z)))*180/Math.PI;
+const zoomDe=v=>Math.log2(360*Math.cos(v.lat*Math.PI/180)*v.s/256);
+async function indexarZip(blob){const base=Math.max(0,blob.size-70000),tail=new DataView(await blob.slice(base).arrayBuffer());let e=-1;
+for(let i=tail.byteLength-22;i>=0;i--)if(tail.getUint32(i,true)===0x06054b50){e=i;break}if(e<0)throw new Error('no es un ZIP válido');
+let n=tail.getUint16(e+10,true),cs=tail.getUint32(e+12,true),co=tail.getUint32(e+16,true);
+if(n===0xFFFF||co===0xFFFFFFFF){let l=-1;for(let i=e-20;i>=0;i--)if(tail.getUint32(i,true)===0x07064b50){l=i;break}if(l<0)throw new Error('ZIP64 incompleto');
+const off=Number(tail.getBigUint64(l+8,true)),h=new DataView(await blob.slice(off,off+56).arrayBuffer());n=Number(h.getBigUint64(32,true));cs=Number(h.getBigUint64(40,true));co=Number(h.getBigUint64(48,true))}
+const cd=new DataView(await blob.slice(co,co+cs).arrayBuffer()),dc=new TextDecoder(),idx=new Map;let p=0,zmin=99,zmax=0;
+while(p+46<=cd.byteLength&&cd.getUint32(p,true)===0x02014b50){const m=cd.getUint16(p+10,true),c=cd.getUint32(p+20,true),nl=cd.getUint16(p+28,true),xl=cd.getUint16(p+30,true),kl=cd.getUint16(p+32,true),o=cd.getUint32(p+42,true),
+nom=dc.decode(new Uint8Array(cd.buffer,p+46,nl)),r=/(\d+)\/(\d+)\/(\d+)\.(png|jpe?g|webp)(\.tile)?$/i.exec(nom);
+if(r){const z=+r[1];idx.set(z+'/'+r[2]+'/'+r[3],[o,c,m]);zmin=Math.min(zmin,z);zmax=Math.max(zmax,z)}p+=46+nl+xl+kl}
+return{idx,zmin,zmax}}
+async function leerTilePaquete(z,x,y){const e=FONDO.idx.get(z+'/'+x+'/'+y);if(!e)return null;const[o,c,m]=e,h=new DataView(await FONDO.blob.slice(o,o+30).arrayBuffer()),ini=o+30+h.getUint16(26,true)+h.getUint16(28,true);
+let b=FONDO.blob.slice(ini,ini+c);if(m===8)b=await new Response(b.stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob();return createImageBitmap(b)}
+function pedirTile(z,x,y){const C=FONDO.cache,k=FONDO.modo+z+'/'+x+'/'+y;if(C.has(k))return C.get(k);C.set(k,null);if(C.size>400)C.delete(C.keys().next().value);
+const fin=im=>{if(im){C.set(k,im);if(FONDO.redibujar)FONDO.redibujar()}};
+if(FONDO.modo==='paquete')leerTilePaquete(z,x,y).then(fin).catch(()=>{});
+else if(FONDO.modo==='linea'){const i=new Image();i.onload=()=>fin(i);i.src='https://tile.openstreetmap.org/'+z+'/'+x+'/'+y+'.png'}return null}
+function fondoTiles(x,v,W,H){if(FONDO.modo!=='paquete'&&FONDO.modo!=='linea')return;if(FONDO.modo==='paquete'&&!FONDO.idx)return;
+const k=Math.cos(v.lat*Math.PI/180);let z=Math.round(zoomDe(v));z=FONDO.modo==='paquete'?Math.min(Math.max(z,FONDO.zmin),FONDO.zmax):Math.min(Math.max(z,3),19);
+const x0=tilesX(v.lng-W/2/(k*v.s),z),x1=tilesX(v.lng+W/2/(k*v.s),z),y0=tilesY(v.lat+H/2/v.s,z),y1=tilesY(v.lat-H/2/v.s,z);if((x1-x0+1)*(y1-y0+1)>90)return;
+for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){const im=pedirTile(z,tx,ty);if(!im)continue;const a=proyectar(v,{lat:tLat(ty,z),lng:tLng(tx,z)},W,H),b=proyectar(v,{lat:tLat(ty+1,z),lng:tLng(tx+1,z)},W,H);x.drawImage(im,a.x,a.y,b.x-a.x+.5,b.y-a.y+.5)}
+const t=FONDO.modo==='linea'?'© OpenStreetMap contributors':FONDO.atrib;if(t){x.font='11px sans-serif';const w=x.measureText(t).width+8;x.fillStyle='rgba(255,255,255,.8)';x.fillRect(W-w,H-16,w,16);x.fillStyle='#10202b';x.fillText(t,W-w+4,H-4)}}
+async function cargarFondo(){const m=await get('mapas','base'),f=await get('meta','fondo');FONDO.cache.clear();
+if(m)Object.assign(FONDO,{blob:m.blob,idx:m.idx,zmin:m.zmin,zmax:m.zmax,n:m.idx.size,nombre:m.nombre,atrib:m.atrib});
+FONDO.modo=f?f.v:(m?'paquete':'ninguno');if(FONDO.modo==='paquete'&&!FONDO.idx)FONDO.modo='ninguno'}
+function initFondoUI(){const s=$('#fo'),i=$('#fi2'),pint=()=>{i.textContent=(FONDO.idx?'Mapa cargado: '+FONDO.nombre+' · '+FONDO.n+' teselas · zoom '+FONDO.zmin+'–'+FONDO.zmax:'No hay mapa cargado.')+(FONDO.modo==='linea'?' «En línea» solo funciona con conexión.':'')};s.value=FONDO.modo;pint();
+s.onchange=async()=>{if(s.value==='paquete'&&!FONDO.idx){alert('Primero cargue un mapa sin conexión.');s.value=FONDO.modo;return}FONDO.modo=s.value;FONDO.cache.clear();await put('meta',{k:'fondo',v:FONDO.modo});pint()};
+$('#fm').onchange=async e=>{const f=e.target.files[0];if(!f)return;i.textContent='Leyendo mapa…';
+try{const r=await indexarZip(f);if(!r.idx.size)throw new Error('el ZIP no contiene teselas con estructura z/x/y.png');const atrib=prompt('Texto de atribución que se mostrará sobre el mapa:','© OpenStreetMap contributors')||'';
+await put('mapas',{id:'base',nombre:f.name,blob:f,idx:r.idx,zmin:r.zmin,zmax:r.zmax,atrib});await put('meta',{k:'fondo',v:'paquete'});await cargarFondo();s.value=FONDO.modo}catch(err){alert('No se pudo cargar el mapa: '+err.message)}pint()}}
 </script>
 <script>/* SERVICIO DE IMPORTACIÓN: CSV/JSON → transformadores e inventario. */
 const nk=x=>String(x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
@@ -137,7 +175,7 @@ ${['marca','potencia','tecnologia','brazo','altura'].map(k=>`<label>${({potencia
 <div class=row><label class=btn style="margin:0">Tomar foto<input id=ph type=file accept="image/*" capture=environment hidden></label><button data-a=gps>Capturar GPS</button><button data-a=man>Escribir coordenadas</button></div>
 <div id=th class=row></div><p id=gi class=ms></p>
 <canvas id=cv width=340 height=300></canvas>
-<div class=row><button data-a=zi>Acercar</button><button data-a=zo>Alejar</button><button data-a=ra>Quitar ajuste</button></div>
+<div class=row><button data-a=zi>Acercar</button><button data-a=zo>Alejar</button><button data-a=ra>Quitar ajuste</button></div><button class="pri wide" data-a=mira>Ubicar con precisión (pantalla completa)</button>
 <p class=ms>Toque el mapa para ubicar la luminaria donde realmente está. Azul: transformador · gris: inventario · verde: ya registradas · naranja: GPS original · rojo: ajustada.</p>
 <div class=row><button class=pri data-a=save>Guardar</button>${S.reg.some(r=>r.id===d.id)?'<button class=dan data-a=del>Eliminar</button>':''}</div>`;
 const ph=$('#ph');ph.onclick=()=>{GP=gps()};
@@ -152,7 +190,7 @@ async function info(){const f=(g)=>g?g.lat.toFixed(6)+', '+g.lng.toFixed(6):'—
 const th=$('#th');th.innerHTML='';for(const id of d.fotos){const r=await get('fotos',id);if(r){const i=new Image();i.src=URL.createObjectURL(r.blob);th.appendChild(i)}}}
 function ctr(){const t=S.trafos.find(z=>z.codigo===d.trafo);return d.gpsOrig||(t&&t.lat!=null?t:null)||S.inv.find(z=>z.trafo===d.trafo&&z.lat!=null)||{lat:0,lng:0}}
 function draw(){const c=$('#cv'),x=c.getContext('2d'),W=c.width,H=c.height,C=ctr(),k=Math.cos(C.lat*Math.PI/180),s=W/ZOOM,t=S.trafos.find(z=>z.codigo===d.trafo);
-const X=l=>W/2+(l-C.lng)*k*s,Y=l=>H/2-(l-C.lat)*s;x.fillStyle='#e6ecef';x.fillRect(0,0,W,H);x.strokeStyle='#cdd6dc';x.beginPath();for(let i=0;i<W;i+=50){x.moveTo(i,0);x.lineTo(i,H);x.moveTo(0,i);x.lineTo(W,i)}x.stroke();
+const X=l=>W/2+(l-C.lng)*k*s,Y=l=>H/2-(l-C.lat)*s;FONDO.redibujar=()=>{cancelAnimationFrame(FONDO._r);FONDO._r=requestAnimationFrame(()=>V.v==='form'&&$('#cv')&&draw())};capaBase(x,{lat:C.lat,lng:C.lng,s},W,H);
 const dot=(p,col,r)=>{if(p&&p.lat!=null){x.fillStyle=col;x.beginPath();x.arc(X(p.lng),Y(p.lat),r,0,7);x.fill()}};
 S.inv.filter(z=>z.trafo===d.trafo).forEach(z=>dot(z,'#8a979f',5));S.reg.filter(z=>z.trafo===d.trafo&&z.id!==d.id).forEach(z=>dot(z.gpsAdj||z.gpsOrig,'#1b7f3b',5));
 if(t&&t.lat!=null){x.fillStyle='#0a58ca';x.fillRect(X(t.lng)-6,Y(t.lat)-6,12,12)}dot(d.gpsOrig,'#f08c00',6);dot(d.gpsAdj,'#d00000',8);
@@ -167,11 +205,12 @@ function vData(){m.innerHTML=`<label>Nombre del técnico<input id=us value="${es
 <p class=ms>Base: ${S.trafos.length} transformadores · ${S.inv.length} luminarias. Registros de terreno: ${S.reg.length} · fotos: ${S.reg.reduce((a,r)=>a+r.fotos.length,0)}.</p>
 <label>Tipo de archivo CSV<select id=ck><option value=auto>Detectar automáticamente</option><option value=T>Transformadores</option><option value=L>Luminarias</option></select></label>
 <label>Importar base de trabajo (CSV o JSON)<input id=fi type=file multiple></label>
+<h3>Mapa de fondo</h3><label>Fondo del mapa<select id=fo><option value=ninguno>Sin fondo (cuadrícula)</option><option value=paquete>Mapa cargado (sin conexión)</option><option value=linea>Calles en línea (OpenStreetMap)</option></select></label><div id=fi2 class=ms></div><label>Cargar mapa sin conexión (.zip con teselas z/x/y)<input id=fm type=file></label>
 <div id=ar></div><div class=row><button data-a=area>Calcular área de cartografía</button></div>
 <div class=row><button class=pri data-a=exp>Exportar levantamiento (ZIP)</button></div>
 <div class=row><button class=dan data-a=wipe>Borrar registros del teléfono</button></div>
 <p class=ms>El ZIP contiene registros.json, registros.csv y la carpeta fotos/. Se exportan las coordenadas originales y las ajustadas por separado.</p>`;
-$('#us').oninput=async e=>{S.usuario=e.target.value;await put('meta',{k:'usuario',v:S.usuario})};$('#fi').onchange=e=>imp([...e.target.files])}
+$('#us').oninput=async e=>{S.usuario=e.target.value;await put('meta',{k:'usuario',v:S.usuario})};$('#fi').onchange=e=>imp([...e.target.files]);initFondoUI()}
 </script>
 <script>/* PRIORIDAD 1 — SELECCIÓN DIRECTA DEL TRANSFORMADOR: búsqueda por código mientras se escribe. No lista el inventario completo. */
 function buscarTrafos(L,q,max=6){q=String(q||'').toUpperCase().replace(/\s+/g,'');if(!q)return[];
@@ -196,15 +235,15 @@ function vistaAjustada(P,W,H,pad=56){if(!P.length)return{lat:0,lng:0,s:1e5};cons
 return{lat,lng:(c+e)/2,s:Math.min((W-2*pad)/dg,(H-2*pad)/dl,MAXS)}}
 const proyectar=(v,p,W,H)=>({x:W/2+(p.lng-v.lng)*Math.cos(v.lat*Math.PI/180)*v.s,y:H/2-(p.lat-v.lat)*v.s});
 let MP=null;
-let capaBase=(x,v,W,H)=>{x.fillStyle='#e6ecef';x.fillRect(0,0,W,H);x.strokeStyle='#cdd6dc';x.lineWidth=1;const o=proyectar(v,{lat:0,lng:0},W,H),a=((o.x%60)+60)%60,b=((o.y%60)+60)%60;x.beginPath();for(let i=a;i<W;i+=60){x.moveTo(i,0);x.lineTo(i,H)}for(let j=b;j<H;j+=60){x.moveTo(0,j);x.lineTo(W,j)}x.stroke()};
-function abrirMapa(cod){
+let capaBase=(x,v,W,H)=>{x.fillStyle='#e6ecef';x.fillRect(0,0,W,H);x.strokeStyle='#cdd6dc';x.lineWidth=1;const o=proyectar(v,{lat:0,lng:0},W,H),a=((o.x%60)+60)%60,b=((o.y%60)+60)%60;x.beginPath();for(let i=a;i<W;i+=60){x.moveTo(i,0);x.lineTo(i,H)}for(let j=b;j<H;j+=60){x.moveTo(0,j);x.lineTo(W,j)}x.stroke();fondoTiles(x,v,W,H)};
+function abrirMapa(cod,modo){
 const t=S.trafos.find(z=>z.codigo===cod)||{},L=S.inv.filter(z=>z.trafo===cod),con=L.filter(z=>z.lat!=null&&z.lng!=null),sin=L.length-con.length,tp=t.lat!=null&&t.lng!=null?{lat:t.lat,lng:t.lng}:null;
-const o=document.createElement('div');o.id='mp';o.innerHTML=`<canvas></canvas><div id=mb><button data-m=x>✕ Cerrar</button><button data-m=fit>Vista completa</button></div>${sin||!tp?`<div id=mw>${sin?sin+' luminaria(s) sin coordenadas: no aparecen en el mapa. ':''}${tp?'':'El transformador no tiene coordenadas.'}</div>`:''}<div id=mf hidden></div>`;document.body.appendChild(o);
-const c=o.querySelector('canvas'),x=c.getContext('2d'),pts=[...con,...(tp?[tp]:[])];
-MP={o,c,x,con,tp,cod,sel:null,W:0,H:0,v:null,P:new Map};
+const o=document.createElement('div');o.id='mp';o.innerHTML=`<canvas></canvas><div id=mb><button data-m=x>✕ Cerrar</button><button data-m=fit>Vista completa</button></div>${modo==='punto'?'':sin||!tp?`<div id=mw>${sin?sin+' luminaria(s) sin coordenadas: no aparecen en el mapa. ':''}${tp?'':'El transformador no tiene coordenadas.'}</div>`:''}${modo==='punto'?'<div id=mf><div id=mc class=ms></div><div class=row><button class=pri data-m=colocar>Colocar punto aquí</button><button data-m=migps>Mi GPS</button></div><div class=ms>Mueva el mapa hasta que la mira quede sobre el punto exacto. Toque para centrar ahí.</div></div>':'<div id=mf hidden></div>'}`;document.body.appendChild(o);
+const c=o.querySelector('canvas'),x=c.getContext('2d'),ref=modo==='punto'?(d.gpsAdj||d.gpsOrig):null,pts=[...con,...(tp?[tp]:[])];
+MP={o,c,x,con,tp,cod,modo,sel:null,W:0,H:0,v:null,P:new Map};
 const medir=()=>{const dpr=devicePixelRatio||1;MP.W=innerWidth;MP.H=innerHeight;c.width=MP.W*dpr;c.height=MP.H*dpr;x.setTransform(dpr,0,0,dpr,0,0)};
-const fit=()=>{MP.v=vistaAjustada(pts,MP.W,MP.H);dibujarMapa()};medir();fit();
-o.onclick=e=>{const b=e.target.closest('[data-m]');if(!b)return;if(b.dataset.m==='x')cerrarMapa();if(b.dataset.m==='fit'){MP.sel=null;ficha();fit()}if(b.dataset.m==='val')validarDesdeMapa()};
+const fit=()=>{MP.v=ref?{lat:ref.lat,lng:ref.lng,s:3e5}:vistaAjustada(pts,MP.W,MP.H);dibujarMapa()};medir();fit();
+o.onclick=e=>{const b=e.target.closest('[data-m]');if(!b)return;if(b.dataset.m==='x')cerrarMapa();if(b.dataset.m==='fit'){MP.sel=null;ficha();fit()}if(b.dataset.m==='val')validarDesdeMapa();if(b.dataset.m==='colocar')colocarPunto();if(b.dataset.m==='migps')miGps()};
 let pu=0;const P=MP.P;
 c.onpointerdown=e=>{c.setPointerCapture(e.pointerId);P.set(e.pointerId,{x:e.clientX,y:e.clientY,x0:e.clientX,y0:e.clientY});pu=0};
 c.onpointermove=e=>{const p=P.get(e.pointerId);if(!p)return;const v=MP.v,k=Math.cos(v.lat*Math.PI/180);
@@ -216,16 +255,22 @@ c.onpointercancel=e=>P.delete(e.pointerId);
 c.onwheel=e=>{e.preventDefault();MP.v.s=Math.min(Math.max(MP.v.s*(e.deltaY<0?1.2:.83),200),MAXS*4);dibujarMapa()};
 addEventListener('resize',MP.rz=()=>{if(MP){medir();dibujarMapa()}})}
 function cerrarMapa(){if(!MP)return;removeEventListener('resize',MP.rz);MP.o.remove();MP=null}
-function dibujarMapa(){const{x,W,H,v,con,tp,sel}=MP;capaBase(x,v,W,H);
+function dibujarMapa(){const{x,W,H,v,con,tp,sel}=MP;FONDO.redibujar=()=>{cancelAnimationFrame(FONDO._r);FONDO._r=requestAnimationFrame(()=>MP&&dibujarMapa())};capaBase(x,v,W,H);
 for(const z of con){const p=proyectar(v,z,W,H),r=RM.get(z._k);x.beginPath();x.arc(p.x,p.y,10,0,7);x.fillStyle='#2e9d4f';x.fill();x.lineWidth=r?4:2;x.strokeStyle=r?(r.estado==='no_encontrada'?'#b3261e':r.estado==='novedad'?'#f08c00':'#0b3d1c'):'#fff';x.stroke();
 if(sel===z){x.beginPath();x.arc(p.x,p.y,17,0,7);x.lineWidth=3;x.strokeStyle='#10202b';x.stroke()}
 if(v.s>8e4){x.fillStyle='#10202b';x.font='11px sans-serif';x.fillText(String(z.serie).slice(-5),p.x+13,p.y+4)}}
-if(tp){const p=proyectar(v,tp,W,H);x.beginPath();x.moveTo(p.x,p.y-15);x.lineTo(p.x+14,p.y+11);x.lineTo(p.x-14,p.y+11);x.closePath();x.fillStyle='#d00000';x.fill();x.lineWidth=2;x.strokeStyle='#fff';x.stroke()}}
-function tocarMapa(px,py){const{v,W,H,con}=MP;let b=null,bd=26;for(const z of con){const p=proyectar(v,z,W,H),dd=Math.hypot(p.x-px,p.y-py);if(dd<bd){bd=dd;b=z}}MP.sel=b;ficha();dibujarMapa()}
+if(tp){const p=proyectar(v,tp,W,H);x.beginPath();x.moveTo(p.x,p.y-15);x.lineTo(p.x+14,p.y+11);x.lineTo(p.x-14,p.y+11);x.closePath();x.fillStyle='#d00000';x.fill();x.lineWidth=2;x.strokeStyle='#fff';x.stroke()}
+if(MP.modo==='punto'){const pt=(q,col,r)=>{if(q){const p=proyectar(v,q,W,H);x.beginPath();x.arc(p.x,p.y,r,0,7);x.fillStyle=col;x.fill();x.lineWidth=2;x.strokeStyle='#fff';x.stroke()}};pt(d.gpsOrig,'#f08c00',7);pt(d.gpsAdj,'#d00000',8);pt(MP.ahora,'#0a58ca',7);
+x.strokeStyle='#10202b';x.lineWidth=2;x.beginPath();x.moveTo(W/2-26,H/2);x.lineTo(W/2+26,H/2);x.moveTo(W/2,H/2-26);x.lineTo(W/2,H/2+26);x.stroke();x.beginPath();x.arc(W/2,H/2,5,0,7);x.strokeStyle='#d00000';x.stroke();
+const mc=MP.o.querySelector('#mc');if(mc)mc.innerHTML='Mira: <b>'+v.lat.toFixed(6)+', '+v.lng.toFixed(6)+'</b> · zoom '+zoomDe(v).toFixed(1)+' · 1 px ≈ '+(111320/v.s).toFixed(2)+' m'}}
+function tocarMapa(px,py){const{v,W,H,con}=MP;if(MP.modo==='punto'){const k=Math.cos(v.lat*Math.PI/180);v.lat-=(py-H/2)/v.s;v.lng+=(px-W/2)/(k*v.s);dibujarMapa();return}let b=null,bd=26;for(const z of con){const p=proyectar(v,z,W,H),dd=Math.hypot(p.x-px,p.y-py);if(dd<bd){bd=dd;b=z}}MP.sel=b;ficha();dibujarMapa()}
 function ficha(){const f=MP.o.querySelector('#mf'),z=MP.sel;if(!z){f.hidden=true;return}const r=RM.get(z._k);f.hidden=false;
 f.innerHTML=`<b>${esc(z.serie)}</b> <span class="chip ${r?r.estado:''}">${r?LBL[r.estado]:'Pendiente'}</span><div class=ms>Transformador ${esc(z.trafo)} · ${z.potencia?esc(z.potencia)+' W':'W —'} · ${esc(z.tecnologia)||'tecnología —'}<br>Coordenadas ${z.lat.toFixed(6)}, ${z.lng.toFixed(6)}${r&&r.obs?'<br>Novedad: '+esc(r.obs):''}</div><div class=row><button class=pri data-m=val>${r?'Ver / editar validación':'Validar'}</button></div>`}
 function validarDesdeMapa(){const z=MP.sel,cod=MP.cod;if(!z)return;cerrarMapa();const r=RM.get(z._k);if(r){d=structuredClone(r);go('form',d.trafo)}else newForm(cod,'inventario',z)}
 A.mapa=()=>abrirMapa(V.p);
+function colocarPunto(){const v=MP.v;d.gpsAdj={lat:v.lat,lng:v.lng,ts:new Date().toISOString(),via:'mira'};cerrarMapa();info();draw()}
+async function miGps(){const g=await gps();if(!g)return alert('No se obtuvo GPS. Active la ubicación.');MP.ahora=g;MP.v.lat=g.lat;MP.v.lng=g.lng;dibujarMapa()}
+A.mira=()=>abrirMapa(d.trafo,'punto');
 </script>
 <script>/* PRIORIDAD 3 (preparación) — ÁREA DE CARTOGRAFÍA: calcula, a partir de las coordenadas del inventario, las zonas que debe cubrir el mapa offline
    (casco urbano + corredores rurales) como celdas de ~1,1 km con 1 celda de margen. Genera una región GeoJSON para extraer solo esas zonas. */
@@ -247,6 +292,6 @@ A.areaGeo=()=>{if(!ZONAS)return;const a=document.createElement('a');a.href=URL.c
 </script>
 <script>/* ARRANQUE: abre la base, carga datos, registra el Service Worker. */
 /* ---------- arranque ---------- */
-(async()=>{await open();await load();render();if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();if(false&&'serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{})})();
+(async()=>{await open();await load();await cargarFondo();render();if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();if(false&&'serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{})})();
 </script>
 </body></html>
