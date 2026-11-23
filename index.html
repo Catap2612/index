@@ -40,13 +40,13 @@ button:disabled{opacity:.45}
 <script>/* NÚCLEO: estado global, constantes y utilidades puras. */
 /* Interruptores de funciones: false = oculta y sin efecto (el código y los datos guardados se conservan). */
 const FUNCIONES={distanciaReferencia:false,cierreConPendientes:false,revisionSeries:false}; // cierreConPendientes: true permite cerrar un transformador con aviso aunque falten luminarias
-const ESQUEMA=2,APP_VERSION='1.11.1'; // ESQUEMA: versión del contrato de datos (ver docs/ESQUEMA_DATOS.md)
+const ESQUEMA=2,APP_VERSION='1.11.2'; // versión con validaciones, importación transaccional y tolerancia a errores // ESQUEMA: versión del contrato de datos (ver docs/ESQUEMA_DATOS.md)
 const $=s=>document.querySelector(s),m=$('#m');
 let db,S={trafos:[],inv:[],reg:[],proyectos:[],puntos:[],cierres:[],lotes:[],revisiones:[],ultimaExport:'',catMat:[],usuario:''},RM=new Map,V={v:'home',p:null,q:''},d=null,GP=null,ZOOM=0.0008;
 const LBL={coincide:'Coincide',novedad:'Con novedad',no_encontrada:'No encontrada',nueva:'Nueva',otro_trafo:'De otro trafo',sin_serie:'Sin serie'};
 const TIT={inventario:'Validar luminaria',nueva:'Luminaria nueva',otro_trafo:'Luminaria de otro transformador',sin_serie:'Luminaria sin serie legible'};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const num=v=>{const n=parseFloat(String(v).replace(',','.'));return isFinite(n)?n:null};
+const num=v=>{if(v===null||v===undefined||String(v).trim()==='')return null;const z=String(v).trim().replace(',','.');if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(z))return null;const n=Number(z);return Number.isFinite(n)?n:null};
 </script>
 <script>/* DOMINIO: reglas de fotografías de una luminaria. Máximo 2 por luminaria; el archivo se nombra con la serie: PA0069_1, PA0069_2.
    Los nombres se calculan al mostrar/exportar (no al capturar), por eso siguen la serie aunque se corrija después. */
@@ -58,14 +58,16 @@ function asignarNombres(regs){const usados=new Set,res=new Map;for(const r of re
 </script>
 <script>/* DOMINIO: distancia en línea recta entre luminarias. Solo pueden ser referencia las luminarias VERIFICADAS:
    registro guardado cuya luminaria fue encontrada (no «no encontrada»). Las pendientes del inventario NO son referencia. */
-function distM(a,b){const R=6371000,r=Math.PI/180,dl=(b.lat-a.lat)*r,dg=(b.lng-a.lng)*r,h=Math.sin(dl/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dg/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
-const esVerificada=r=>!!r&&r.estado!=='no_encontrada';
+function coordValida(p){return !!p&&Number.isFinite(Number(p.lat))&&Number.isFinite(Number(p.lng))&&Number(p.lat)>=-90&&Number(p.lat)<=90&&Number(p.lng)>=-180&&Number(p.lng)<=180}
+function distM(a,b){if(!coordValida(a)||!coordValida(b))return null;const R=6371000,r=Math.PI/180,dl=(b.lat-a.lat)*r,dg=(b.lng-a.lng)*r,h=Math.min(1,Math.max(0,Math.sin(dl/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dg/2)**2));return 2*R*Math.asin(Math.sqrt(h))}
+const ESTADOS_VERIFICADOS=new Set(['coincide','novedad','nueva','otro_trafo','sin_serie']);
+const esVerificada=r=>!!r&&ESTADOS_VERIFICADOS.has(r.estado);
 const nombreRef=r=>(r.tipo==='sin_serie'||!String(r.serie||'').trim()||r.serie==='SIN_SERIE')?'SIN SERIE ('+r.id+')':r.serie;
 /* Coordenadas a usar y su incertidumbre estimada (m): ajustada ≈3 · GPS = precisión del GPS (o 5) · inventario ≈10 (valores orientativos). */
 function coordsRegistro(r,invPorK){if(r.gpsAdj)return{lat:r.gpsAdj.lat,lng:r.gpsAdj.lng,fuente:'ajustada',err:3};
 if(r.gpsOrig)return{lat:r.gpsOrig.lat,lng:r.gpsOrig.lng,fuente:'GPS',err:r.gpsOrig.acc!=null?r.gpsOrig.acc:5};
 const z=r.invKey&&invPorK?invPorK(r.invKey):null;return z&&z.lat!=null&&z.lng!=null?{lat:z.lat,lng:z.lng,fuente:'inventario',err:10}:null}
-function distanciaEntre(a,b){const m=distM(a,b),err=Math.hypot(a.err,b.err),av=[];if(m<2*err)av.push('La distancia es comparable al error de las coordenadas: poco confiable.');if(a.fuente==='inventario'||b.fuente==='inventario')av.push('Una coordenada viene del inventario y no se midió en campo.');return{m,err,aviso:av.join(' ')}}
+function distanciaEntre(a,b){const m=distM(a,b);if(m==null)return{m:null,err:null,aviso:'Coordenadas inválidas o incompletas.'};const err=Math.hypot(a.err,b.err),av=[];if(m<2*err)av.push('La distancia es comparable al error de las coordenadas: poco confiable.');if(a.fuente==='inventario'||b.fuente==='inventario')av.push('Una coordenada viene del inventario y no se midió en campo.');return{m,err,aviso:av.join(' ')}}
 function candidatasReferencia(regs,actualId,act,trafoActual,invPorK){const L=[];for(const r of regs){if(r.id===actualId||!esVerificada(r))continue;const c=coordsRegistro(r,invPorK);L.push({id:r.id,serie:nombreRef(r),trafo:r.trafo,mismo:r.trafo===trafoActual,estado:r.estado,coords:c,m:act&&c?distM(act,c):null})}
 return L.sort((a,b)=>act?((a.m==null)-(b.m==null)||a.m-b.m):((b.mismo-a.mismo)||String(a.serie).localeCompare(String(b.serie),'es',{numeric:true})))}
 function estadoSerieRef(q,inv,regs){q=String(q).trim().toUpperCase();if(!q)return null;const r=regs.find(x=>String(x.serie).toUpperCase()===q);if(r)return esVerificada(r)?'verificada':'no_encontrada';return inv.some(x=>String(x.serie).toUpperCase()===q)?'pendiente':null}
@@ -142,13 +144,15 @@ function open(){return new Promise((ok,ko)=>{const r=indexedDB.open('apterreno',
 const rq=r=>new Promise((ok,ko)=>{r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error)});
 const st=(s,w)=>db.transaction(s,w?'readwrite':'readonly').objectStore(s);
 const all=s=>rq(st(s).getAll()),put=(s,v)=>rq(st(s,1).put(v)),get=(s,k)=>rq(st(s).get(k)),del=(s,k)=>rq(st(s,1).delete(k)),clr=s=>rq(st(s,1).clear());
+/* Escritura por lotes: un único commit y rollback automático si alguna operación falla. */
+function loteDB(operaciones){return new Promise((ok,ko)=>{const nombres=[...new Set(operaciones.map(o=>o.store))],tx=db.transaction(nombres,'readwrite');tx.oncomplete=()=>ok();tx.onerror=()=>ko(tx.error||new Error('Error en transacción'));tx.onabort=()=>ko(tx.error||new Error('Transacción cancelada'));for(const o of operaciones){const store=tx.objectStore(o.store);if(o.tipo==='clear')store.clear();else if(o.tipo==='delete')store.delete(o.key);else store.put(o.value)}})}
 async function load(){[S.trafos,S.inv,S.reg,S.proyectos,S.puntos,S.cierres,S.lotes,S.revisiones]=await Promise.all([all('trafos'),all('inv'),all('reg'),all('proyectos'),all('puntos'),all('cierres'),all('lotes'),all('revisiones')]);const cm=await get('meta','catalogoMat');S.catMat=cm?cm.v:MATERIALES_BASE.map(([item,unidad])=>({item,unidad}));const ue=await get('meta','ultimaExport');S.ultimaExport=ue?ue.v:'';const ul=await get('meta','ultimo');S.ultimo=ul?ul.v:'';const u=await get('meta','usuario');S.usuario=u?u.v:'';RM=new Map(S.reg.filter(r=>r.invKey).map(r=>[r.invKey,r]));S.trafos.sort((a,b)=>a.codigo.localeCompare(b.codigo,'es',{numeric:true}))}
-async function limpiarFotosHuerfanas(){const uso=new Set([...S.reg,...S.puntos,...S.revisiones].flatMap(r=>r.fotos)),ks=await rq(st('fotos').getAllKeys());for(const k of ks)if(!uso.has(k))await del('fotos',k)}
+async function limpiarFotosHuerfanas(){try{const uso=new Set([...S.reg,...S.puntos,...S.revisiones].flatMap(r=>Array.isArray(r.fotos)?r.fotos:[])),ks=await rq(st('fotos').getAllKeys()),ops=ks.filter(k=>!uso.has(k)).map(k=>({store:'fotos',tipo:'delete',key:k}));if(ops.length)await loteDB(ops)}catch(e){console.warn('Limpieza de fotos omitida por seguridad:',e)}}
 </script>
 <script>/* SERVICIOS DE DISPOSITIVO: GPS y compresión de fotos. */
 /* ---------- utilidades ---------- */
 const gps=()=>new Promise(ok=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>ok({lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.round(p.coords.accuracy),ts:new Date().toISOString()}),()=>ok(null),{enableHighAccuracy:true,timeout:20000,maximumAge:0}):ok(null));
-function comp(f){return new Promise(ok=>{const i=new Image();i.onload=()=>{const k=Math.min(1,1280/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);URL.revokeObjectURL(i.src);c.toBlob(ok,'image/jpeg',.7)};i.src=URL.createObjectURL(f)})}
+function comp(f){return new Promise((ok,ko)=>{const i=new Image(),u=URL.createObjectURL(f);i.onload=()=>{try{const k=Math.min(1,1280/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(i.width*k));c.height=Math.max(1,Math.round(i.height*k));const ctx=c.getContext('2d');if(!ctx)throw Error('Canvas no disponible');ctx.drawImage(i,0,0,c.width,c.height);c.toBlob(b=>{URL.revokeObjectURL(u);b?ok(b):ko(Error('No fue posible comprimir la foto'))},'image/jpeg',.7)}catch(e){URL.revokeObjectURL(u);ko(e)}};i.onerror=()=>{URL.revokeObjectURL(u);ko(Error('Archivo de imagen inválido'))};i.src=u})}
 </script>
 <script>/* SERVICIO ZIP: empaquetado sin dependencias externas. */
 /* ---------- ZIP (sin compresión) ---------- */
@@ -211,22 +215,25 @@ else if(ch=='"')q=1;else if(ch==sep){r.push(c);c=''}
 else if(ch=='\n'||ch=='\r'){if(ch=='\r'&&t[i+1]=='\n')i++;r.push(c);c='';if(r.some(x=>x.trim()))R.push(r);r=[]}
 else c+=ch}
 r.push(c);if(r.some(x=>x.trim()))R.push(r);
-const H=(R.shift()||[]).map(x=>x.trim());return R.map(a=>Object.fromEntries(H.map((h,i)=>[h,(a[i]||'').trim()])))}
+const H=(R.shift()||[]).map(x=>x.trim());if(q)throw Error('CSV con comillas sin cerrar');if(!H.length||H.some(h=>!h))throw Error('CSV con encabezados vacíos');if(new Set(H).size!==H.length)throw Error('CSV con encabezados duplicados');return R.map(a=>Object.fromEntries(H.map((h,i)=>[h,(a[i]||'').trim()])))}
 function kind(n,rows){const h=Object.keys(rows[0]||{}).map(nk);if(h.some(k=>/^(marca|tecnologia|brazo|longitud_brazo|altura|altura_montaje)$/.test(k)))return'L';return/lum/i.test(n)?'L':'T'}
 const toT=o=>{const c=String(pk(o,'codigo','codigo_transformador','transformador','trafo','id','numero','nro','no','nombre'));return c?{codigo:c,serie:pk(o,'serie','numero_serie','serial'),potencia:pk(o,'potencia','kva','potencia_kva'),direccion:pk(o,'direccion','ubicacion'),barrio:pk(o,'barrio','sector'),lat:num(pk(o,'latitud','lat')),lng:num(pk(o,'longitud','lng','lon')),raw:o}:null};
 const toL=(o,fi,i)=>{const t=String(pk(o,'transformador','trafo','codigo_transformador','codigo')),s=String(pk(o,'serie','numero_serie','serial'));return{_k:t+'|'+s+'|'+fi+'-'+i,serie:s,trafo:t,marca:pk(o,'marca'),potencia:pk(o,'potencia','potencia_w'),tecnologia:pk(o,'tecnologia'),brazo:pk(o,'brazo','longitud_brazo'),altura:pk(o,'altura','altura_montaje'),lat:num(pk(o,'latitud','lat')),lng:num(pk(o,'longitud','lng','lon')),barrio:pk(o,'barrio'),raw:o}};
-async function imp(files){const T=[],L=[],mode=$('#ck').value;let fi=0;
+async function imp(files){
+if(!files||!files.length)return;const T=[],L=[],mode=$('#ck').value;let fi=0;const errores=[];
 for(const f of files){fi++;let TT=[],LL=[];
-if(/\.(csv|txt)$/i.test(f.name)||/csv/.test(f.type)){const rows=csv(dec(await f.arrayBuffer()));if(!rows.length)return alert('CSV vacío o sin filas de datos: '+f.name);(mode==='auto'?kind(f.name,rows):mode)==='L'?LL.push(...rows):TT.push(...rows)}
-else{let j;try{j=JSON.parse(dec(await f.arrayBuffer()))}catch{return alert('Archivo inválido: '+f.name)}TT=j.transformadores||j.trafos||[];LL=j.luminarias||j.lums||[]}
-TT.forEach(o=>{const t=toT(o);if(t)T.push(t)});LL.forEach((o,i)=>L.push(toL(o,fi,i)))}
-if(!T.length&&!L.length)return alert('No se encontraron transformadores ni luminarias. Revise los encabezados del archivo.');
-const replT=T.length>0;
-if((S.trafos.length||S.inv.length)&&!confirm('Se reemplazará '+[replT&&'la lista de transformadores',L.length&&'el inventario de luminarias'].filter(Boolean).join(' y ')+'. Los registros de terreno se conservan.'))return;
-const have=new Set(replT?T.map(t=>t.codigo):S.trafos.map(t=>t.codigo));
-L.forEach(l=>{if(l.trafo&&!have.has(l.trafo)){have.add(l.trafo);T.push({codigo:l.trafo,serie:'',potencia:'',direccion:'',barrio:l.barrio,lat:null,lng:null})}});
-if(replT)await clr('trafos');if(L.length)await clr('inv');
-for(const t of T)await put('trafos',t);for(const l of L)await put('inv',l);await load();render();alert('Cargado: '+T.length+' transformadores, '+L.length+' luminarias.')}
+try{if(/\.(csv|txt)$/i.test(f.name)||/csv/.test(f.type)){const rows=csv(dec(await f.arrayBuffer()));if(!rows.length){errores.push(f.name+': CSV vacío o sin datos');continue}const k=(mode==='auto'?kind(f.name,rows):mode);if(k==='L')LL=rows;else TT=rows}
+else{const j=JSON.parse(dec(await f.arrayBuffer()));if(!j||typeof j!=='object'||Array.isArray(j))throw Error('JSON debe ser un objeto');TT=j.transformadores||j.trafos||[];LL=j.luminarias||j.lums||[];if(!Array.isArray(TT)||!Array.isArray(LL))throw Error('transformadores/trafos y luminarias/lums deben ser arreglos')}
+if(TT.some(x=>!x||typeof x!=='object'||Array.isArray(x))||LL.some(x=>!x||typeof x!=='object'||Array.isArray(x)))throw Error('Hay registros con estructura inválida');
+TT.forEach(o=>{const t=toT(o);if(t)T.push(t)});LL.forEach((o,i)=>{const l=toL(o,fi,i);if(l)L.push(l)});
+}catch(e){errores.push(f.name+': '+(e.message||'no se pudo leer'))}}
+if(errores.length)alert('Archivos con problemas:\n'+errores.join('\n'));
+if(!T.length&&!L.length)return alert('No se encontraron transformadores ni luminarias válidos. Revise los encabezados y el formato.');
+const replT=T.length>0;if((S.trafos.length||S.inv.length)&&!confirm('Se reemplazará '+[replT&&'la lista de transformadores',L.length&&'el inventario de luminarias'].filter(Boolean).join(' y ')+'. Los registros de terreno se conservan.'))return;
+const have=new Set(replT?T.map(t=>t.codigo):S.trafos.map(t=>t.codigo));L.forEach(l=>{if(l.trafo&&!have.has(l.trafo)){have.add(l.trafo);T.push({codigo:l.trafo,serie:'',potencia:'',direccion:'',barrio:l.barrio,lat:null,lng:null})}});
+const ops=[];if(replT)ops.push({store:'trafos',tipo:'clear'});if(L.length)ops.push({store:'inv',tipo:'clear'});for(const t of T)ops.push({store:'trafos',tipo:'put',value:t});for(const l of L)ops.push({store:'inv',tipo:'put',value:l});
+try{await loteDB(ops);await load();render();alert('Carga exitosa: '+T.length+' transformadores, '+L.length+' luminarias.')}catch(e){alert('No se guardó la importación. La base de datos conserva los datos previos.\n'+(e.message||e))}}
+
 /* Filas {serie, transformador?} desde las filas de un CSV/JSON (objetos) o desde una lista simple de series. */
 function filasRevisionDesde(arr){return arr.map(x=>typeof x==='string'?{serie:x}:{serie:pk(x,'serie','numero_serie','serial'),transformador:pk(x,'transformador','trafo','codigo_transformador','codigo')}).filter(f=>String(f.serie).trim())}
 </script>
@@ -263,10 +270,10 @@ t:e=>{S.ultimo=e.t;put('meta',{k:'ultimo',v:e.t});go('tdet',e.t)},
 nw:e=>newForm(V.p,e.tipo),inv:e=>newForm(V.p,'inventario',S.inv.find(x=>x._k===e.k)),
 reg:e=>{d=structuredClone(S.reg.find(r=>r.id===e.id));go('form',d.trafo)},
 gps:async e=>{const g=await gps();if(!g)return alert('No se obtuvo GPS. Active la ubicación.');d.gpsOrig=g;info();draw()},
-man:e=>{const v=prompt('Latitud, longitud (ej. 4.711000, -74.072100)');if(!v)return;const p=v.split(/[;,\s]+/).map(num);if(p.length<2||p[0]==null||p[1]==null)return alert('Formato inválido.');d.gpsOrig={lat:p[0],lng:p[1],acc:null,ts:new Date().toISOString(),manual:true};info();draw()},zi:()=>{ZOOM/=1.6;draw()},zo:()=>{ZOOM*=1.6;draw()},ra:()=>{d.gpsAdj=null;info();draw()},
+man:e=>{const v=prompt('Latitud, longitud (ej. 4.711000, -74.072100)');if(!v)return;const p=v.split(/[;,\s]+/).map(num);if(p.length<2||p[0]==null||p[1]==null)return alert('Formato inválido.');if(!coordValida({lat:p[0],lng:p[1]}))return alert('Coordenadas fuera de rango (latitud -90 a 90, longitud -180 a 180).');d.gpsOrig={lat:p[0],lng:p[1],acc:null,ts:new Date().toISOString(),manual:true};info();draw()},zi:()=>{ZOOM=Math.max(0.00000005,ZOOM/1.6);draw()},zo:()=>{ZOOM=Math.min(0.02,ZOOM*1.6);draw()},ra:()=>{d.gpsAdj=null;info();draw()},
 save,del:async()=>{if(!confirm('¿Eliminar este registro y sus fotos?'))return;for(const f of new Set([...d.fotos,...(S.reg.find(r=>r.id===d.id)||{fotos:[]}).fotos]))await del('fotos',f);await del('reg',d.id);await load();go('tdet',d.trafo)},
 exp,wipe:async()=>{if(!confirm('¿Borrar TODOS los registros y fotos de este teléfono? Exporte antes.'))return;await clr('reg');await clr('fotos');await load();render()}};
-document.onclick=e=>{const el=e.target.closest('[data-a]');if(el)A[el.dataset.a](el.dataset)};
+document.onclick=e=>{const el=e.target.closest('[data-a]');if(!el)return;const fn=A[el.dataset.a];if(typeof fn!=='function'){console.warn('Acción no disponible:',el.dataset.a);return}try{const r=fn(el.dataset);if(r&&typeof r.catch==='function')r.catch(err=>{console.error(err);alert('No se pudo completar la acción. '+(err.message||''))})}catch(err){console.error(err);alert('No se pudo completar la acción. '+(err.message||''))}};
 m.oninput=e=>{if(e.target.dataset.mi!==undefined&&d&&d.materiales){d.materiales[+e.target.dataset.mi].cant=e.target.value;return}if(e.target.dataset.pk&&PN){PN[e.target.dataset.pk]=e.target.value;return}const k=e.target.dataset.k;if(!k)return;d[k]=e.target.value;if(k==='serie'){look();etiquetas()}};
 /* ---------- vistas ---------- */
 const prog=c=>{const l=S.inv.filter(x=>x.trafo===c);return[l.filter(x=>RM.has(x._k)).length,l.length]};
