@@ -31,18 +31,15 @@ h3{margin:18px 0 4px}.ms{font-size:13px;color:#4a5a66}
 #vf{position:fixed;inset:0;z-index:30;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center}#vf img{max-width:100%;max-height:90%;object-fit:contain}
 #pk{position:fixed;inset:0;z-index:25;background:var(--bg);overflow:auto}#pkh{display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--ink);color:#fff;font-weight:700}#pkh button{background:var(--yl)}#pk>input{margin:8px 12px;width:calc(100% - 24px)}#pl{padding:0 12px 40px}
 .card.big2{padding:18px;border-left:8px solid var(--yl)}.card.big2 b{font-size:20px}nav button{font-size:13px;padding:14px 4px}
-button:disabled{opacity:.45}
 </style>
 </head><body>
 <header><button id=bk hidden data-a=back>‹ Atrás</button><span id=ti>Amarres AP · Terreno</span></header>
 <main id=m></main>
 <nav><button data-a=nav data-v=home id=n0>Inicio</button><button data-a=nav data-v=list id=n1>Verificar</button><button data-a=nav data-v=plist id=n2>Levantar</button><button data-a=nav data-v=data id=n3>Datos</button></nav>
 <script>/* NÚCLEO: estado global, constantes y utilidades puras. */
-/* Interruptores de funciones: false = oculta y sin efecto (el código y los datos guardados se conservan). */
-const FUNCIONES={distanciaReferencia:false,cierreConPendientes:false}; // cierreConPendientes: true permite cerrar un transformador con aviso aunque falten luminarias
-const ESQUEMA=2,APP_VERSION='1.11.0'; // ESQUEMA: versión del contrato de datos (ver docs/ESQUEMA_DATOS.md)
+const ESQUEMA=2,APP_VERSION='1.8.0'; // ESQUEMA: versión del contrato de datos (ver docs/ESQUEMA_DATOS.md)
 const $=s=>document.querySelector(s),m=$('#m');
-let db,S={trafos:[],inv:[],reg:[],proyectos:[],puntos:[],cierres:[],lotes:[],revisiones:[],ultimaExport:'',catMat:[],usuario:''},RM=new Map,V={v:'home',p:null,q:''},d=null,GP=null,ZOOM=0.0008;
+let db,S={trafos:[],inv:[],reg:[],proyectos:[],puntos:[],catMat:[],usuario:''},RM=new Map,V={v:'home',p:null,q:''},d=null,GP=null,ZOOM=0.0008;
 const LBL={coincide:'Coincide',novedad:'Con novedad',no_encontrada:'No encontrada',nueva:'Nueva',otro_trafo:'De otro trafo',sin_serie:'Sin serie'};
 const TIT={inventario:'Validar luminaria',nueva:'Luminaria nueva',otro_trafo:'Luminaria de otro transformador',sin_serie:'Luminaria sin serie legible'};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -70,49 +67,6 @@ function candidatasReferencia(regs,actualId,act,trafoActual,invPorK){const L=[];
 return L.sort((a,b)=>act?((a.m==null)-(b.m==null)||a.m-b.m):((b.mismo-a.mismo)||String(a.serie).localeCompare(String(b.serie),'es',{numeric:true})))}
 function estadoSerieRef(q,inv,regs){q=String(q).trim().toUpperCase();if(!q)return null;const r=regs.find(x=>String(x.serie).toUpperCase()===q);if(r)return esVerificada(r)?'verificada':'no_encontrada';return inv.some(x=>String(x.serie).toUpperCase()===q)?'pendiente':null}
 </script>
-<script>/* DOMINIO: avance y cierre de un transformador. Una luminaria del inventario está «revisada» cuando tiene registro
-   (coincide, con novedad o no encontrada). Solo se puede marcar completado cuando no queda ninguna pendiente. */
-function resumenTransformador(cod,inv,regs){const L=inv.filter(x=>x.trafo===cod),R=regs.filter(r=>r.trafo===cod),B=new Map(R.filter(r=>r.invKey).map(r=>[r.invKey,r]));
-const rev=L.filter(x=>B.has(x._k)),ver=rev.filter(x=>esVerificada(B.get(x._k))).length,ct=t=>R.filter(r=>r.tipo===t).length;
-return{total:L.length,revisadas:rev.length,pendientes:L.length-rev.length,verificadas:ver,noEncontradas:rev.length-ver,nuevas:ct('nueva'),otroTrafo:ct('otro_trafo'),sinSerie:ct('sin_serie'),novedad:R.filter(r=>r.estado==='novedad').length}}
-function puedeCerrar(cod,inv,regs){const s=resumenTransformador(cod,inv,regs);return s.pendientes===0&&(s.total>0||s.nuevas+s.otroTrafo+s.sinSerie>0)}
-function estadoTransformador(cod,inv,regs,cierre){if(cierre)return'Completado';const s=resumenTransformador(cod,inv,regs);if(!s.revisadas&&!s.nuevas&&!s.otroTrafo&&!s.sinSerie)return'Pendiente';return puedeCerrar(cod,inv,regs)?'Listo para cerrar':'En proceso'}
-</script>
-<script>/* DOMINIO: qué se exporta. Filtro por fecha de registro para no repetir información, y archivo de luminarias verificadas con coordenadas corregidas. */
-function filtrarRegistros(regs,f){if(!f||f.modo==='todo')return regs.slice();
-if(f.modo==='nuevo')return regs.filter(r=>!f.ultima||String(r.fecha)>f.ultima);
-if(f.modo==='rango'){const a=f.desde?new Date(f.desde+'T00:00:00'):null,b=f.hasta?new Date(f.hasta+'T23:59:59.999'):null;return regs.filter(r=>{const t=new Date(r.fecha);return(!a||t>=a)&&(!b||t<=b)})}return regs.slice()}
-/* Fila de una luminaria verificada con su coordenada corregida: ajustada > GPS > inventario. */
-function filaVerificada(r,ik){if(!esVerificada(r))return null;const c=coordsRegistro(r,ik),z=r.invKey&&ik?ik(r.invKey):null;
-return{id:r.id,transformador:r.trafo,tipo:r.tipo,estado:r.estado,serie:nombreRef(r),lat:c?c.lat:null,lng:c?c.lng:null,fuente:c?c.fuente:'sin_coordenadas',incertidumbre:c?c.err:null,lat_original:z&&z.lat!=null?z.lat:null,lng_original:z&&z.lng!=null?z.lng:null,fecha:r.fecha}}
-function geojsonVerificadas(F){return{type:'FeatureCollection',features:F.filter(f=>f.lat!=null).map(f=>({type:'Feature',properties:{id:f.id,transformador:f.transformador,serie:f.serie,tipo:f.tipo,estado:f.estado,fuente_coordenada:f.fuente},geometry:{type:'Point',coordinates:[f.lng,f.lat]}}))}}
-</script>
-<script>/* DOMINIO: revisión de series repetidas. Un grupo (lote) de luminarias se convierte en órdenes de trabajo: una por serie, con todos los lugares
-   (transformadores) donde aparece en el censo. En cada lugar el técnico registra qué encuentra; la conclusión se deduce de esos hallazgos. No modifica el inventario. */
-const HALLAZGOS={encontrada:'Encontrada con esta serie',otra_serie:'Encontrada con otra serie',no_encontrada:'No encontrada'};
-const normSerie=s=>String(s||'').trim().toUpperCase().replace(/\s+/g,'');
-const ocKey=o=>o.invKey||('T:'+o.trafo);
-const ocDe=z=>({trafo:z.trafo,invKey:z._k,lat:z.lat??null,lng:z.lng??null});
-/* Series que aparecen más de una vez en el inventario (en distintos transformadores o en el mismo). */
-function seriesRepetidas(inv){const M=new Map;for(const z of inv){const k=normSerie(z.serie);if(!k||k==='SIN_SERIE')continue;if(!M.has(k))M.set(k,[]);M.get(k).push(z)}
-return[...M.values()].filter(a=>a.length>1).map(a=>({serie:String(a[0].serie).trim(),ocurrencias:a.map(ocDe)})).sort((a,b)=>a.serie.localeCompare(b.serie,'es',{numeric:true}))}
-/* filas: [{serie, transformador?}]. Los lugares salen del inventario; un transformador escrito en el archivo que no lo tenga se agrega como «solo archivo». */
-function ordenesDesdeLista(filas,inv){const por=new Map;for(const f of filas){const k=normSerie(f.serie);if(!k)continue;if(!por.has(k))por.set(k,{serie:String(f.serie).trim(),trafos:new Set()});if(f.transformador)por.get(k).trafos.add(String(f.transformador).trim())}
-const ordenes=[],sinInventario=[];for(const[k,o]of por){const oc=inv.filter(z=>normSerie(z.serie)===k).map(ocDe);for(const t of o.trafos)if(!oc.some(c=>c.trafo===t))oc.push({trafo:t,invKey:null,lat:null,lng:null,soloArchivo:true});
-if(oc.length)ordenes.push({serie:o.serie,ocurrencias:oc});else sinInventario.push(o.serie)}return{ordenes,sinInventario}}
-function concluirOrden(orden,revs){const por=new Map(revs.map(r=>[r.ocKey,r])),rv=orden.ocurrencias.map(o=>({o,r:por.get(ocKey(o))})),h=rv.filter(x=>x.r),tot=rv.length;
-if(h.length<tot)return{estado:h.length?'En proceso':'Pendiente',codigo:null,texto:'',revisadas:h.length,total:tot};
-const en=h.filter(x=>x.r.hallazgo==='encontrada'),ot=h.filter(x=>x.r.hallazgo==='otra_serie'),no=h.filter(x=>x.r.hallazgo==='no_encontrada');let codigo,texto;
-if(en.length>=2){codigo='distintas';texto='Hay luminarias distintas con la misma serie (error de censo o serie repetida de fábrica) en: '+en.map(x=>x.o.trafo).join(', ')+'.'}
-else if(ot.length){codigo='error_serie';texto='La serie está mal registrada en el censo en: '+ot.map(x=>x.o.trafo+' (se lee '+x.r.serieLeida+')').join(', ')+'.'}
-else if(en.length===1){codigo='misma';texto=no.length?'Es la misma luminaria, ubicada en '+en[0].o.trafo+'. El registro en '+no.map(x=>x.o.trafo).join(', ')+' está duplicado o mal asociado.':'Existe una sola luminaria con esa serie, en '+en[0].o.trafo+'.'}
-else{codigo='ninguna';texto='No se encontró en ninguna ubicación.'}
-return{estado:'Revisada',codigo,texto,revisadas:tot,total:tot}}
-/* Una fila por lugar de cada orden (también los sin revisar). NM: Map id de revisión → nombres de foto. */
-function filasRevision(lote,revs,NM){const rows=[];for(const o of lote.ordenes){const rs=revs.filter(r=>r.orden===o.id),c=concluirOrden(o,rs);
-for(const oc of o.ocurrencias){const r=rs.find(x=>x.ocKey===ocKey(oc)),co=r?coordsRegistro(r):null;
-rows.push({lote:lote.nombre,serie:o.serie,transformador:oc.trafo,estado_orden:c.estado,conclusion:c.codigo||'',conclusion_texto:c.texto,hallazgo:r?r.hallazgo:'sin_revisar',serie_leida:r?r.serieLeida:'',lat_original:oc.lat,lng_original:oc.lng,lat_gps:r&&r.gpsOrig?r.gpsOrig.lat:null,lng_gps:r&&r.gpsOrig?r.gpsOrig.lng:null,precision_m:r&&r.gpsOrig?r.gpsOrig.acc:null,lat_corregida:co?co.lat:null,lng_corregida:co?co.lng:null,fuente_coordenada:co?co.fuente:'',observaciones:r?r.obs:'',fotos:r&&NM&&NM.get(r.id)?NM.get(r.id).map(n=>n+'.jpg').join(' '):'',tecnico:r?r.usuario:'',fecha:r?r.fecha:''})}}return rows}
-</script>
 <script>/* DOMINIO: levantamiento de proyectos nuevos de iluminación (expansión). Un proyecto tiene puntos consecutivos (P001, P002…);
    cada punto es un poste existente, un poste nuevo requerido o una luminaria existente de referencia. */
 const TIPOS_PUNTO={poste_existente:'Poste existente',poste_nuevo:'Poste nuevo requerido',luminaria_existente:'Luminaria existente (referencia)'};
@@ -138,12 +92,12 @@ function faltantesSolicitud(p){const F=[],v=x=>String(x||'').trim();if(!v(p.fech
 </script>
 <script>/* DATOS: única puerta de acceso a IndexedDB. Esquema v1; nuevas versiones se migran en onupgradeneeded. */
 /* ---------- IndexedDB ---------- */
-function open(){return new Promise((ok,ko)=>{const r=indexedDB.open('apterreno',5);r.onupgradeneeded=()=>{const x=r.result;for(const[n,k]of[['trafos','codigo'],['inv','_k'],['reg','id'],['fotos','id'],['meta','k'],['mapas','id'],['proyectos','id'],['puntos','id'],['cierres','trafo'],['lotes','id'],['revisiones','id']])if(!x.objectStoreNames.contains(n))x.createObjectStore(n,{keyPath:k})};r.onsuccess=()=>{db=r.result;ok()};r.onerror=()=>ko(r.error)})}
+function open(){return new Promise((ok,ko)=>{const r=indexedDB.open('apterreno',3);r.onupgradeneeded=()=>{const x=r.result;for(const[n,k]of[['trafos','codigo'],['inv','_k'],['reg','id'],['fotos','id'],['meta','k'],['mapas','id'],['proyectos','id'],['puntos','id']])if(!x.objectStoreNames.contains(n))x.createObjectStore(n,{keyPath:k})};r.onsuccess=()=>{db=r.result;ok()};r.onerror=()=>ko(r.error)})}
 const rq=r=>new Promise((ok,ko)=>{r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error)});
 const st=(s,w)=>db.transaction(s,w?'readwrite':'readonly').objectStore(s);
 const all=s=>rq(st(s).getAll()),put=(s,v)=>rq(st(s,1).put(v)),get=(s,k)=>rq(st(s).get(k)),del=(s,k)=>rq(st(s,1).delete(k)),clr=s=>rq(st(s,1).clear());
-async function load(){[S.trafos,S.inv,S.reg,S.proyectos,S.puntos,S.cierres,S.lotes,S.revisiones]=await Promise.all([all('trafos'),all('inv'),all('reg'),all('proyectos'),all('puntos'),all('cierres'),all('lotes'),all('revisiones')]);const cm=await get('meta','catalogoMat');S.catMat=cm?cm.v:MATERIALES_BASE.map(([item,unidad])=>({item,unidad}));const ue=await get('meta','ultimaExport');S.ultimaExport=ue?ue.v:'';const ul=await get('meta','ultimo');S.ultimo=ul?ul.v:'';const u=await get('meta','usuario');S.usuario=u?u.v:'';RM=new Map(S.reg.filter(r=>r.invKey).map(r=>[r.invKey,r]));S.trafos.sort((a,b)=>a.codigo.localeCompare(b.codigo,'es',{numeric:true}))}
-async function limpiarFotosHuerfanas(){const uso=new Set([...S.reg,...S.puntos,...S.revisiones].flatMap(r=>r.fotos)),ks=await rq(st('fotos').getAllKeys());for(const k of ks)if(!uso.has(k))await del('fotos',k)}
+async function load(){[S.trafos,S.inv,S.reg,S.proyectos,S.puntos]=await Promise.all([all('trafos'),all('inv'),all('reg'),all('proyectos'),all('puntos')]);const cm=await get('meta','catalogoMat');S.catMat=cm?cm.v:MATERIALES_BASE.map(([item,unidad])=>({item,unidad}));const ul=await get('meta','ultimo');S.ultimo=ul?ul.v:'';const u=await get('meta','usuario');S.usuario=u?u.v:'';RM=new Map(S.reg.filter(r=>r.invKey).map(r=>[r.invKey,r]));S.trafos.sort((a,b)=>a.codigo.localeCompare(b.codigo,'es',{numeric:true}))}
+async function limpiarFotosHuerfanas(){const uso=new Set([...S.reg,...S.puntos].flatMap(r=>r.fotos)),ks=await rq(st('fotos').getAllKeys());for(const k of ks)if(!uso.has(k))await del('fotos',k)}
 </script>
 <script>/* SERVICIOS DE DISPOSITIVO: GPS y compresión de fotos. */
 /* ---------- utilidades ---------- */
@@ -227,38 +181,25 @@ const have=new Set(replT?T.map(t=>t.codigo):S.trafos.map(t=>t.codigo));
 L.forEach(l=>{if(l.trafo&&!have.has(l.trafo)){have.add(l.trafo);T.push({codigo:l.trafo,serie:'',potencia:'',direccion:'',barrio:l.barrio,lat:null,lng:null})}});
 if(replT)await clr('trafos');if(L.length)await clr('inv');
 for(const t of T)await put('trafos',t);for(const l of L)await put('inv',l);await load();render();alert('Cargado: '+T.length+' transformadores, '+L.length+' luminarias.')}
-/* Filas {serie, transformador?} desde las filas de un CSV/JSON (objetos) o desde una lista simple de series. */
-function filasRevisionDesde(arr){return arr.map(x=>typeof x==='string'?{serie:x}:{serie:pk(x,'serie','numero_serie','serial'),transformador:pk(x,'transformador','trafo','codigo_transformador','codigo')}).filter(f=>String(f.serie).trim())}
 </script>
-<script>/* SERVICIO DE EXPORTACIÓN: paquete ZIP de entrega de la verificación. Se puede limitar por fecha (todo · solo lo nuevo desde la última exportación · rango).
-   Contenido: registros.json, registros.csv, transformadores.csv, luminarias_validadas.csv/.geojson (coordenadas corregidas) y fotos/. */
-const csvCelda=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
-const csvTabla=(cols,rows)=>'\ufeff'+[cols.join(','),...rows.map(r=>r.map(csvCelda).join(','))].join('\r\n');
-async function exportar(filtro){const t0=new Date().toISOString(),f=filtro||{modo:'todo'},REG=filtrarRegistros(S.reg,f);if(!REG.length){alert('No hay registros en el período elegido.');return 0}
-const F=[],enc=new TextEncoder(),NM=asignarNombres(REG),IM=new Map(S.inv.map(z=>[z._k,z])),ik=k=>IM.get(k),RX=REG.map(r=>({...r,fotosIds:r.fotos,fotos:NM.get(r.id).map(n=>n+'.jpg')})),VER=REG.map(r=>filaVerificada(r,ik)).filter(Boolean),
-cods=[...new Set([...REG.map(r=>r.trafo),...filtrarRegistros(S.cierres,f).map(c=>c.trafo)])].sort(),
-TR=cods.map(c=>{const ci=S.cierres.find(x=>x.trafo===c);return{transformador:c,estado:estadoTransformador(c,S.inv,S.reg,ci),fecha_cierre:ci?ci.fecha:'',usuario_cierre:ci?ci.usuario:'',...resumenTransformador(c,S.inv,S.reg)}});
-F.push({n:'registros.json',d:enc.encode(JSON.stringify({app:'amarres-ap-terreno',tipo_paquete:'verificacion',esquema:ESQUEMA,app_version:APP_VERSION,exportado:t0,periodo:f,usuario:S.usuario,registros:RX,transformadores:TR},null,1))});
-F.push({n:'registros.csv',d:enc.encode(csvTabla(['id','transformador','tipo','estado','serie','transformador_base','marca','potencia','tecnologia','brazo','altura','lat_original','lng_original','precision_m','fecha_gps','lat_ajustada','lng_ajustada','dist_ref_m','dist_ref_error_m','ref_serie','ref_transformador','ref_id','dist_ref_coordenadas','observaciones','fotos','tecnico','fecha_registro'],
-RX.map(r=>[r.id,r.trafo,r.tipo,r.estado,r.serie,r.otroTrafo,r.marca,r.potencia,r.tecnologia,r.brazo,r.altura,r.gpsOrig?.lat,r.gpsOrig?.lng,r.gpsOrig?.acc,r.gpsOrig?.ts,r.gpsAdj?.lat,r.gpsAdj?.lng,r.refDist?.m,r.refDist?.errM,r.ref?.serie,r.ref?.trafo,r.ref?.id,r.refDist?r.refDist.fuenteA+'-'+r.refDist.fuenteB:'',r.obs,r.fotos.join(' '),r.usuario,r.fecha])))});
-F.push({n:'transformadores.csv',d:enc.encode(csvTabla(['transformador','estado','fecha_cierre','usuario_cierre','total_luminarias','revisadas','pendientes','verificadas','no_encontradas','nuevas','otro_transformador','sin_serie','con_novedad'],TR.map(t=>[t.transformador,t.estado,t.fecha_cierre,t.usuario_cierre,t.total,t.revisadas,t.pendientes,t.verificadas,t.noEncontradas,t.nuevas,t.otroTrafo,t.sinSerie,t.novedad])))});
-F.push({n:'luminarias_validadas.csv',d:enc.encode(csvTabla(['id','transformador','tipo','estado','serie','lat_corregida','lng_corregida','fuente_coordenada','incertidumbre_estimada_m','lat_original_inventario','lng_original_inventario','fecha_registro'],VER.map(v=>[v.id,v.transformador,v.tipo,v.estado,v.serie,v.lat,v.lng,v.fuente,v.incertidumbre,v.lat_original,v.lng_original,v.fecha])))});
-F.push({n:'luminarias_validadas.geojson',d:enc.encode(JSON.stringify(geojsonVerificadas(VER)))});
-for(const r of REG)for(let i=0;i<r.fotos.length;i++){const ft=await get('fotos',r.fotos[i]);if(ft)F.push({n:'fotos/'+NM.get(r.id)[i]+'.jpg',d:new Uint8Array(await ft.blob.arrayBuffer())})}
-const a=document.createElement('a');a.href=URL.createObjectURL(zip(F));a.download='levantamiento_'+(S.usuario||'tecnico').replace(/\W+/g,'_')+'_'+t0.slice(0,10)+(f.modo==='rango'?'_'+(f.desde||'inicio')+'_a_'+(f.hasta||'hoy'):f.modo==='nuevo'?'_nuevo':'')+'.zip';a.click();
-if(f.modo==='todo'||f.modo==='nuevo'){S.ultimaExport=t0;await put('meta',{k:'ultimaExport',v:t0})}return REG.length}
-function leerFiltroExport(){const modo=$('#exm')?$('#exm').value:'todo';if(modo==='rango'){const d=$('#exd').value,h=$('#exh').value;if(!d&&!h){alert('Elija al menos una fecha.');return null}if(d&&h&&d>h){alert('La fecha «desde» no puede ser posterior a «hasta».');return null}return{modo,desde:d,hasta:h}}return modo==='nuevo'?{modo,ultima:S.ultimaExport||''}:{modo:'todo'}}
-async function exp(){const f=leerFiltroExport();if(!f)return;const n=await exportar(f);if(n)alert('Exportados '+n+' registro(s).'+(f.modo==='rango'?' La exportación por rango no cambia el punto de partida de «solo lo nuevo».':' La próxima exportación «solo lo nuevo» partirá de ahora.'));if(V.v==='data')render()}
+<script>/* SERVICIO DE EXPORTACIÓN: paquete ZIP de entrega (registros.json, registros.csv, fotos/). */
+async function exp(){if(!S.reg.length)return alert('No hay registros para exportar.');const F=[],enc=new TextEncoder(),NM=asignarNombres(S.reg),RX=S.reg.map(r=>({...r,fotosIds:r.fotos,fotos:NM.get(r.id).map(n=>n+'.jpg')}));
+F.push({n:'registros.json',d:enc.encode(JSON.stringify({app:'amarres-ap-terreno',tipo_paquete:'verificacion',esquema:ESQUEMA,app_version:APP_VERSION,exportado:new Date().toISOString(),usuario:S.usuario,registros:RX},null,1))});
+const cols=['id','transformador','tipo','estado','serie','transformador_base','marca','potencia','tecnologia','brazo','altura','lat_original','lng_original','precision_m','fecha_gps','lat_ajustada','lng_ajustada','dist_ref_m','dist_ref_error_m','ref_serie','ref_transformador','ref_id','dist_ref_coordenadas','observaciones','fotos','tecnico','fecha_registro'];
+const row=r=>[r.id,r.trafo,r.tipo,r.estado,r.serie,r.otroTrafo,r.marca,r.potencia,r.tecnologia,r.brazo,r.altura,r.gpsOrig?.lat,r.gpsOrig?.lng,r.gpsOrig?.acc,r.gpsOrig?.ts,r.gpsAdj?.lat,r.gpsAdj?.lng,r.refDist?.m,r.refDist?.errM,r.ref?.serie,r.ref?.trafo,r.ref?.id,r.refDist?r.refDist.fuenteA+'-'+r.refDist.fuenteB:'',r.obs,r.fotos.join(' '),r.usuario,r.fecha].map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',');
+F.push({n:'registros.csv',d:enc.encode('\ufeff'+[cols.join(','),...RX.map(row)].join('\r\n'))});
+for(const r of S.reg)for(let i=0;i<r.fotos.length;i++){const f=await get('fotos',r.fotos[i]);if(f)F.push({n:'fotos/'+NM.get(r.id)[i]+'.jpg',d:new Uint8Array(await f.blob.arrayBuffer())})}
+const a=document.createElement('a');a.href=URL.createObjectURL(zip(F));a.download='levantamiento_'+(S.usuario||'tecnico').replace(/\W+/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.zip';a.click()}
 </script>
 <script>/* INTERFAZ: navegación, vistas, formulario de registro, mapa y reglas de guardado. */
 /* ---------- navegación ---------- */
-const go=(v,p)=>{if(v==='form'&&V.v!=='form'&&d&&S.cierres.some(c=>c.trafo===d.trafo)){if(!confirm('Este transformador está completado. ¿Reabrirlo para modificarlo?'))return;S.cierres=S.cierres.filter(c=>c.trafo!==d.trafo);del('cierres',d.trafo)}if((V.v==='form'||V.v==='pform'||V.v==='rform')&&v!=='form'&&v!=='pform'&&v!=='rform'&&d)limpiarHuerfanas();V.v=v;V.p=p;render();scrollTo(0,0)};
-function render(){const v=V.v,N={home:0,list:1,tdet:1,form:1,plist:2,pnew:2,pdet:2,pform:2,data:3,lotes:0,lnew:0,lote:0,orden:0,rform:0};['n0','n1','n2','n3'].forEach((id,i)=>$('#'+id).className=N[v]===i?'on':'');
-$('#bk').hidden=!['form','tdet','pform','pnew','pdet','lotes','lnew','lote','orden','rform'].includes(v);
-$('#ti').textContent={home:'Amarres AP · Terreno',list:'Transformadores',tdet:V.p,form:v==='form'&&d?TIT[d.tipo]:'',plist:'Levantamientos nuevos',pnew:'Proyecto',pdet:(S.proyectos.find(p=>p.id===V.p)||{}).nombre||'Proyecto',pform:v==='pform'&&d?'Punto '+etiquetaPunto(d.n):'',data:'Datos y exportación',lotes:'Revisión de series',lnew:'Cargar luminarias',lote:(S.lotes.find(l=>l.id===V.p)||{}).nombre||'Grupo',orden:(ordenPorId(V.p)||{o:{}}).o.serie||'Orden',rform:'Revisar lugar'}[v];
-({home:vHome,list:vList,tdet:()=>vTrafo(V.p),form:vForm,plist:vPList,pnew:vPNew,pdet:()=>vPDet(V.p),pform:vPForm,data:vData,lotes:vLotes,lnew:vLNew,lote:()=>vLote(V.p),orden:()=>vOrden(V.p),rform:vRForm})[v]()}
+const go=(v,p)=>{if((V.v==='form'||V.v==='pform')&&v!=='form'&&v!=='pform'&&d)limpiarHuerfanas();V.v=v;V.p=p;render();scrollTo(0,0)};
+function render(){const v=V.v,N={home:0,list:1,tdet:1,form:1,plist:2,pnew:2,pdet:2,pform:2,data:3};['n0','n1','n2','n3'].forEach((id,i)=>$('#'+id).className=N[v]===i?'on':'');
+$('#bk').hidden=!['form','tdet','pform','pnew','pdet'].includes(v);
+$('#ti').textContent={home:'Amarres AP · Terreno',list:'Transformadores',tdet:V.p,form:v==='form'&&d?TIT[d.tipo]:'',plist:'Levantamientos nuevos',pnew:'Proyecto',pdet:(S.proyectos.find(p=>p.id===V.p)||{}).nombre||'Proyecto',pform:v==='pform'&&d?'Punto '+etiquetaPunto(d.n):'',data:'Datos y exportación'}[v];
+({home:vHome,list:vList,tdet:()=>vTrafo(V.p),form:vForm,plist:vPList,pnew:vPNew,pdet:()=>vPDet(V.p),pform:vPForm,data:vData})[v]()}
 const A={
-nav:e=>go(e.v),back:()=>({form:()=>go('tdet',d.trafo),pform:()=>go('pdet',d.proy),pdet:()=>go('plist'),pnew:()=>go('plist'),tdet:()=>go('list'),lotes:()=>go('home'),lnew:()=>go('lotes'),lote:()=>go('lotes'),orden:()=>go('lote',ordenPorId(V.p).l.id),rform:()=>go('orden',d.orden)})[V.v](),
+nav:e=>go(e.v),back:()=>({form:()=>go('tdet',d.trafo),pform:()=>go('pdet',d.proy),pdet:()=>go('plist'),pnew:()=>go('plist'),tdet:()=>go('list')})[V.v](),
 t:e=>{S.ultimo=e.t;put('meta',{k:'ultimo',v:e.t});go('tdet',e.t)},
 nw:e=>newForm(V.p,e.tipo),inv:e=>newForm(V.p,'inventario',S.inv.find(x=>x._k===e.k)),
 reg:e=>{d=structuredClone(S.reg.find(r=>r.id===e.id));go('form',d.trafo)},
@@ -287,7 +228,7 @@ ${['marca','potencia','tecnologia','brazo','altura'].map(k=>`<label>${({potencia
 <canvas id=cv width=340 height=300></canvas>
 <div class=row><button data-a=zi>Acercar</button><button data-a=zo>Alejar</button><button data-a=ra>Quitar ajuste</button></div><button class="pri wide" data-a=mira>Ubicar con precisión (pantalla completa)</button>
 <p class=ms>Toque el mapa para ubicar la luminaria donde realmente está. Azul: transformador · gris: inventario · verde: ya registradas · naranja: GPS original · rojo: ajustada.</p>
-${FUNCIONES.distanciaReferencia?'<h3>Distancia a otra luminaria</h3><div id=rf class=ms></div><div class=row><button data-a=ref>Elegir luminaria de referencia</button><button class=dan id=rq data-a=refq hidden>Quitar</button></div>':''}
+<h3>Distancia a otra luminaria</h3><div id=rf class=ms></div><div class=row><button data-a=ref>Elegir luminaria de referencia</button><button class=dan id=rq data-a=refq hidden>Quitar</button></div>
 <div class=row><button class=pri data-a=save>Guardar</button>${S.reg.some(r=>r.id===d.id)?'<button class=dan data-a=del>Eliminar</button>':''}</div>`;
 enlazarCaptura();look();info();draw()}
 function enlazarCaptura(){const ph=$('#ph');ph.onclick=()=>{GP=gps()};
@@ -303,9 +244,9 @@ const th=$('#th');th.innerHTML='';let i=0;for(const id of d.fotos){const r=await
 etiquetas();const full=d.fotos.length>=MAX_FOTOS,bt=$('#bt'),ph=$('#ph');if(bt){$('#bn').textContent=full?'Máximo '+MAX_FOTOS+' fotos':'Tomar foto ('+d.fotos.length+'/'+MAX_FOTOS+')';bt.style.opacity=full?.5:1;bt.style.pointerEvents=full?'none':'auto';ph.disabled=full}}
 function etiquetas(){document.querySelectorAll('.fl').forEach(e=>e.textContent=nombreFoto(d,+e.dataset.i)+'.jpg')}
 async function quitarFoto(i){if(!confirm('¿Eliminar esta foto? Podrá tomar otra.'))return;const id=d.fotos[i],o=origenD();d.fotos.splice(i,1);if(!(o&&o.fotos.includes(id)))await del('fotos',id);info()}
-const origenD=()=>(d.proy?S.puntos:d.rev?S.revisiones:S.reg).find(r=>r.id===d.id);
+const origenD=()=>(d.proy?S.puntos:S.reg).find(r=>r.id===d.id);
 function limpiarHuerfanas(){const o=origenD();for(const f of d.fotos)if(!(o&&o.fotos.includes(f)))del('fotos',f)}
-function ctr(){const t=S.trafos.find(z=>z.codigo===d.trafo);return d.gpsOrig||(d.orig&&d.orig.lat!=null?d.orig:null)||(t&&t.lat!=null?t:null)||S.inv.find(z=>z.trafo===d.trafo&&z.lat!=null)||otrosPuntos()[0]||{lat:0,lng:0}}
+function ctr(){const t=S.trafos.find(z=>z.codigo===d.trafo);return d.gpsOrig||(t&&t.lat!=null?t:null)||S.inv.find(z=>z.trafo===d.trafo&&z.lat!=null)||otrosPuntos()[0]||{lat:0,lng:0}}
 function draw(){const c=$('#cv'),x=c.getContext('2d'),W=c.width,H=c.height,C=ctr(),k=Math.cos(C.lat*Math.PI/180),s=W/ZOOM,t=S.trafos.find(z=>z.codigo===d.trafo);
 const X=l=>W/2+(l-C.lng)*k*s,Y=l=>H/2-(l-C.lat)*s;FONDO.redibujar=()=>{cancelAnimationFrame(FONDO._r);FONDO._r=requestAnimationFrame(()=>V.v==='form'&&$('#cv')&&draw())};capaBase(x,{lat:C.lat,lng:C.lng,s},W,H);
 const dot=(p,col,r)=>{if(p&&p.lat!=null){x.fillStyle=col;x.beginPath();x.arc(X(p.lng),Y(p.lat),r,0,7);x.fill()}};
@@ -324,11 +265,10 @@ function vData(){m.innerHTML=`<label>Nombre del técnico<input id=us value="${es
 <label>Importar base de trabajo (CSV o JSON)<input id=fi type=file multiple></label>
 <h3>Mapa de fondo</h3><label>Fondo del mapa<select id=fo><option value=ninguno>Sin fondo (cuadrícula)</option><option value=paquete>Mapa cargado (sin conexión)</option><option value=linea>Calles en línea (OpenStreetMap)</option></select></label><div id=fi2 class=ms></div><label>Cargar mapa sin conexión (.zip con teselas z/x/y)<input id=fm type=file></label>
 <div id=ar></div><div class=row><button data-a=area>Calcular área de cartografía</button></div>
-<h3>Exportar</h3><label>Qué exportar<select id=exm><option value=todo>Todo</option><option value=nuevo>Solo lo nuevo desde la última exportación</option><option value=rango>Rango de fechas</option></select></label><div id=exr hidden class=row><label>Desde<input type=date id=exd></label><label>Hasta<input type=date id=exh></label></div><p class=ms id=exu></p>
 <div class=row><button class=pri data-a=exp>Exportar levantamiento (ZIP)</button></div>
 <div class=row><button class=dan data-a=wipe>Borrar registros del teléfono</button></div>
 <p class=ms>El ZIP contiene registros.json, registros.csv y la carpeta fotos/. Se exportan las coordenadas originales y las ajustadas por separado.</p>`;
-$('#us').oninput=async e=>{S.usuario=e.target.value;await put('meta',{k:'usuario',v:S.usuario})};$('#fi').onchange=e=>imp([...e.target.files]);initFondoUI();initExportUI()}
+$('#us').oninput=async e=>{S.usuario=e.target.value;await put('meta',{k:'usuario',v:S.usuario})};$('#fi').onchange=e=>imp([...e.target.files]);initFondoUI()}
 A.qf=e=>quitarFoto(+e.i);
 A.vf=async e=>{const r=await get('fotos',d.fotos[+e.i]);if(!r)return;const o=document.createElement('div');o.id='vf';const im=new Image();im.src=URL.createObjectURL(r.blob);o.appendChild(im);o.insertAdjacentHTML('beforeend','<div class=ms style="color:#fff">Toque para cerrar</div>');o.onclick=()=>{URL.revokeObjectURL(im.src);o.remove()};document.body.appendChild(o)};
 </script>
@@ -337,13 +277,13 @@ function buscarTrafos(L,q,max=6){q=String(q||'').toUpperCase().replace(/\s+/g,''
 const sc=t=>{const c=String(t.codigo).toUpperCase().replace(/\s+/g,'');if(c===q)return 0;if(c.startsWith(q))return 1;if(c.includes(q))return 2;return(t.direccion+' '+t.barrio).toUpperCase().includes(q)?3:9};
 return L.map(t=>[sc(t),t]).filter(x=>x[0]<9).sort((a,b)=>a[0]-b[0]||String(a[1].codigo).localeCompare(String(b[1].codigo),'es',{numeric:true})).slice(0,max).map(x=>x[1])}
 function tarjetaTrafo(t){const n=S.inv.filter(x=>x.trafo===t.codigo).length,a=S.inv.filter(x=>x.trafo===t.codigo&&RM.has(x._k)).length;
-return`<div class=card data-a=t data-t="${esc(t.codigo)}"><b>${esc(t.codigo)}</b><span class=chip>${t.potencia?esc(t.potencia)+' kVA':'kVA —'}</span><small>${esc(t.direccion)} ${esc(t.barrio)}</small><small>${n} luminarias · ${a} validadas · ${estadoTransformador(t.codigo,S.inv,S.reg,S.cierres.find(x=>x.trafo===t.codigo))}</small></div>`}
+return`<div class=card data-a=t data-t="${esc(t.codigo)}"><b>${esc(t.codigo)}</b><span class=chip>${t.potencia?esc(t.potencia)+' kVA':'kVA —'}</span><small>${esc(t.direccion)} ${esc(t.barrio)}</small><small>${n} luminarias · ${a} validadas</small></div>`}
 function resumenTrafo(c){const L=S.inv.filter(x=>x.trafo===c),X=S.reg.filter(r=>r.trafo===c),ver=L.filter(x=>RM.has(x._k)).length,ne=X.filter(r=>r.estado==='no_encontrada').length,nv=X.filter(r=>r.estado==='nueva').length,ot=X.filter(r=>r.estado==='otro_trafo').length,sl=X.filter(r=>r.estado==='sin_serie').length,nov=X.filter(r=>r.estado==='novedad').length;
-return`<div class=ms>Luminarias ${L.length} · verificadas ${ver} · pendientes ${L.length-ver} · no encontradas ${ne}<br>Nuevas ${nv} · cambios de amarre ${ot} · sin serie legible ${sl} · con novedad ${nov}</div>`+panelCierre(c)}
+return`<div class=ms>Luminarias ${L.length} · verificadas ${ver} · pendientes ${L.length-ver} · no encontradas ${ne}<br>Nuevas ${nv} · cambios de amarre ${ot} · sin serie legible ${sl} · con novedad ${nov}</div>`}
 function vList(){
 m.innerHTML=`<label>Código del transformador<input id=q class=big placeholder="Ej. PUR027" autocapitalize=characters autocomplete=off value="${esc(V.q)}"></label><div id=sg></div>
 ${S.ultimo&&S.trafos.some(t=>t.codigo===S.ultimo)?`<button class="pri wide" data-a=t data-t="${esc(S.ultimo)}">Continuar con ${esc(S.ultimo)}</button>`:''}
-<button class="wide" data-a=mapat>Mapa de transformadores (ubicar por posición)</button><button class="wide" data-a=mapav>Mapa de luminarias verificadas</button>
+<button class="wide" data-a=mapat>Mapa de transformadores (ubicar por posición)</button>
 <p class=ms>${S.trafos.length?S.trafos.length+' transformadores en el inventario.':'No hay inventario cargado. Abra «Datos» e impórtelo.'}</p>`;
 const q=$('#q'),pint=()=>{const R=buscarTrafos(S.trafos,V.q);$('#sg').innerHTML=V.q?(R.length?R.map(tarjetaTrafo).join(''):'<p class=ms>Ese código no existe en el inventario cargado.</p>'):''};
 q.oninput=e=>{V.q=e.target.value;pint()};
@@ -351,9 +291,9 @@ q.onkeydown=e=>{if(e.key==='Enter'){const R=buscarTrafos(S.trafos,V.q);if(R.leng
 </script>
 <script>/* INTERFAZ: campo «Distancia a otra luminaria» y selector de luminaria de referencia (solo verificadas, de cualquier transformador). */
 const invPorK=k=>S.inv.find(z=>z._k===k);
-function recalcRef(){if(!FUNCIONES.distanciaReferencia)return;if(!d.ref||d.estado==='no_encontrada'){d.refDist=null;return}const R=S.reg.find(r=>r.id===d.ref.id);if(!R)return;const a=coordsRegistro(d,invPorK),b=coordsRegistro(R,invPorK);if(!a||!b){d.refDist=null;return}
+function recalcRef(){if(!d.ref||d.estado==='no_encontrada'){d.refDist=null;return}const R=S.reg.find(r=>r.id===d.ref.id);if(!R)return;const a=coordsRegistro(d,invPorK),b=coordsRegistro(R,invPorK);if(!a||!b){d.refDist=null;return}
 const x=distanciaEntre(a,b);d.refDist={m:Math.round(x.m*10)/10,errM:Math.round(x.err),fuenteA:a.fuente,fuenteB:b.fuente,aviso:x.aviso,ts:new Date().toISOString()}}
-function refUI(){if(!FUNCIONES.distanciaReferencia)return;const e=$('#rf');if(!e)return;recalcRef();$('#rq').hidden=!d.ref;
+function refUI(){const e=$('#rf');if(!e)return;recalcRef();$('#rq').hidden=!d.ref;
 if(!d.ref){e.textContent='Sin luminaria de referencia.';return}const otro=d.ref.trafo!==d.trafo;
 e.innerHTML=`Referencia: <b>${esc(d.ref.serie)}</b> · transformador ${esc(d.ref.trafo)}${otro?' <span class="chip novedad">OTRO TRANSFORMADOR</span>':''}<br>`+(d.refDist?`<b style="font-size:22px">${d.refDist.m} m</b> en línea recta (±${d.refDist.errM} m aprox.)<br>Coordenadas: ${esc(d.refDist.fuenteA)} ↔ ${esc(d.refDist.fuenteB)}${d.refDist.aviso?'<br><span style="color:var(--wa)">'+esc(d.refDist.aviso)+'</span>':''}`:'<span style="color:var(--wa)">No se puede calcular: falta ubicación en esta luminaria o en la de referencia. Capture el GPS o ajuste en el mapa.</span>')}
 function abrirSelectorRef(){const lista=candidatasReferencia(S.reg,d.id,coordsRegistro(d,invPorK),d.trafo,invPorK),act=coordsRegistro(d,invPorK),o=document.createElement('div');o.id='pk';
@@ -374,11 +314,11 @@ const proyectar=(v,p,W,H)=>({x:W/2+(p.lng-v.lng)*Math.cos(v.lat*Math.PI/180)*v.s
 let MP=null;
 let capaBase=(x,v,W,H)=>{x.fillStyle='#e6ecef';x.fillRect(0,0,W,H);x.strokeStyle='#cdd6dc';x.lineWidth=1;const o=proyectar(v,{lat:0,lng:0},W,H),a=((o.x%60)+60)%60,b=((o.y%60)+60)%60;x.beginPath();for(let i=a;i<W;i+=60){x.moveTo(i,0);x.lineTo(i,H)}for(let j=b;j<H;j+=60){x.moveTo(0,j);x.lineTo(W,j)}x.stroke();fondoTiles(x,v,W,H)};
 function abrirMapa(cod,modo){
-const t=S.trafos.find(z=>z.codigo===cod)||{},L=S.inv.filter(z=>z.trafo===cod),con=lumsCorregidas(L,RM,modo==='punto'&&d?d:null),sin=L.length-con.length,tp=t.lat!=null&&t.lng!=null?{lat:t.lat,lng:t.lng}:null,EXT=modo==='verif'?lumsVerificadas():lumsAnadidas(cod,modo==='punto'&&d?d.id:null),extCon=EXT.filter(z=>!z.sinCoord),extSin=EXT.length-extCon.length;
+const t=S.trafos.find(z=>z.codigo===cod)||{},L=S.inv.filter(z=>z.trafo===cod),con=L.filter(z=>z.lat!=null&&z.lng!=null),sin=L.length-con.length,tp=t.lat!=null&&t.lng!=null?{lat:t.lat,lng:t.lng}:null;
 const TT=[];let sinT=0;if(modo==='trafos'){const G=new Map;for(const z of S.inv)if(z.lat!=null&&z.lng!=null){let a=G.get(z.trafo);if(!a)G.set(z.trafo,a=[]);a.push(z)}for(const tr of S.trafos){const p=posTrafo(tr,G);p?TT.push({t:tr,p}):sinT++}}
-const o=document.createElement('div');o.id='mp';o.innerHTML=`<canvas></canvas><div id=mb><button data-m=x>✕ Cerrar</button><button data-m=fit>Vista completa</button>${modo==='trafos'?'<button data-m=cerca>Cerca de mí</button>':''}</div>${modo==='trafos'&&sinT?`<div id=mw>${sinT} transformador(es) sin ubicación: no aparecen. </div>`:''}${modo==='verif'&&extSin?`<div id=mw>${extSin} luminaria(s) verificada(s) sin coordenadas: no aparecen.</div>`:''}${modo==='punto'||modo==='trafos'||modo==='verif'?'':sin||extSin||!tp?`<div id=mw>${sin?sin+' luminaria(s) sin coordenadas: no aparecen en el mapa. ':''}${extSin?extSin+' luminaria(s) añadida(s) sin coordenadas. ':''}${tp?'':'El transformador no tiene coordenadas.'}</div>`:''}${modo==='punto'?'<div id=mf><div id=mc class=ms></div><div class=row><button class=pri data-m=colocar>Colocar punto aquí</button><button data-m=migps>Mi GPS</button></div><div class=ms>Mueva el mapa hasta que la mira quede sobre el punto exacto. Toque para centrar ahí.</div></div>':'<div id=mf hidden></div>'}`;document.body.appendChild(o);
-const c=o.querySelector('canvas'),x=c.getContext('2d'),ref=modo==='punto'?(d.gpsAdj||d.gpsOrig):null,pts=[...con,...extCon,...(tp?[tp]:[]),...TT.map(q=>q.p),...otrosPuntos()];
-MP={o,c,x,con,ext:extCon,tp,cod,modo,TT,selT:null,cercanos:null,ahora:null,sel:null,W:0,H:0,v:null,P:new Map};
+const o=document.createElement('div');o.id='mp';o.innerHTML=`<canvas></canvas><div id=mb><button data-m=x>✕ Cerrar</button><button data-m=fit>Vista completa</button>${modo==='trafos'?'<button data-m=cerca>Cerca de mí</button>':''}</div>${modo==='trafos'&&sinT?`<div id=mw>${sinT} transformador(es) sin ubicación: no aparecen. </div>`:''}${modo==='punto'||modo==='trafos'?'':sin||!tp?`<div id=mw>${sin?sin+' luminaria(s) sin coordenadas: no aparecen en el mapa. ':''}${tp?'':'El transformador no tiene coordenadas.'}</div>`:''}${modo==='punto'?'<div id=mf><div id=mc class=ms></div><div class=row><button class=pri data-m=colocar>Colocar punto aquí</button><button data-m=migps>Mi GPS</button></div><div class=ms>Mueva el mapa hasta que la mira quede sobre el punto exacto. Toque para centrar ahí.</div></div>':'<div id=mf hidden></div>'}`;document.body.appendChild(o);
+const c=o.querySelector('canvas'),x=c.getContext('2d'),ref=modo==='punto'?(d.gpsAdj||d.gpsOrig):null,pts=[...con,...(tp?[tp]:[]),...TT.map(q=>q.p),...otrosPuntos()];
+MP={o,c,x,con,tp,cod,modo,TT,selT:null,cercanos:null,ahora:null,sel:null,W:0,H:0,v:null,P:new Map};
 const medir=()=>{const dpr=devicePixelRatio||1;MP.W=innerWidth;MP.H=innerHeight;c.width=MP.W*dpr;c.height=MP.H*dpr;x.setTransform(dpr,0,0,dpr,0,0)};
 const fit=()=>{MP.v=ref?{lat:ref.lat,lng:ref.lng,s:3e5}:vistaAjustada(pts,MP.W,MP.H);dibujarMapa()};medir();fit();
 o.onclick=e=>{const b=e.target.closest('[data-m]');if(!b)return;if(b.dataset.m==='x')cerrarMapa();if(b.dataset.m==='fit'){MP.sel=null;ficha();fit()}if(b.dataset.m==='val')validarDesdeMapa();if(b.dataset.m==='colocar')colocarPunto();if(b.dataset.m==='migps')miGps();if(b.dataset.m==='cerca')cercaDeMi();if(b.dataset.m==='selt'){MP.selT=MP.TT.find(q=>q.t.codigo===b.dataset.c)||null;if(MP.selT){MP.v.lat=MP.selT.p.lat;MP.v.lng=MP.selT.p.lng}fichaT();dibujarMapa()}if(b.dataset.m==='abrirt'){const c=b.dataset.c;cerrarMapa();A.t({t:c})}};
@@ -394,21 +334,18 @@ c.onwheel=e=>{e.preventDefault();MP.v.s=Math.min(Math.max(MP.v.s*(e.deltaY<0?1.2
 addEventListener('resize',MP.rz=()=>{if(MP){medir();dibujarMapa()}})}
 function cerrarMapa(){if(!MP)return;removeEventListener('resize',MP.rz);MP.o.remove();MP=null}
 function dibujarMapa(){const{x,W,H,v,con,tp,sel}=MP;FONDO.redibujar=()=>{cancelAnimationFrame(FONDO._r);FONDO._r=requestAnimationFrame(()=>MP&&dibujarMapa())};capaBase(x,v,W,H);
-for(const z of con){const p=proyectar(v,z,W,H),r=RM.get(z._k);if(z.orig&&(z.orig.lat!==z.lat||z.orig.lng!==z.lng)){const q=proyectar(v,z.orig,W,H);x.beginPath();x.moveTo(q.x,q.y);x.lineTo(p.x,p.y);x.lineWidth=1;x.strokeStyle='#8a979f';x.stroke();x.beginPath();x.arc(q.x,q.y,3,0,7);x.fillStyle='#8a979f';x.fill()}x.beginPath();x.arc(p.x,p.y,10,0,7);x.fillStyle='#2e9d4f';x.fill();x.lineWidth=r?4:2;x.strokeStyle=r?(r.estado==='no_encontrada'?'#b3261e':r.estado==='novedad'?'#f08c00':'#0b3d1c'):'#fff';x.stroke();
+for(const z of con){const p=proyectar(v,z,W,H),r=RM.get(z._k);x.beginPath();x.arc(p.x,p.y,10,0,7);x.fillStyle='#2e9d4f';x.fill();x.lineWidth=r?4:2;x.strokeStyle=r?(r.estado==='no_encontrada'?'#b3261e':r.estado==='novedad'?'#f08c00':'#0b3d1c'):'#fff';x.stroke();
 if(sel===z){x.beginPath();x.arc(p.x,p.y,17,0,7);x.lineWidth=3;x.strokeStyle='#10202b';x.stroke()}
 if(v.s>8e4){x.fillStyle='#10202b';x.font='11px sans-serif';x.fillText(String(z.serie).slice(-5),p.x+13,p.y+4)}}
-for(const z of MP.ext){const p=proyectar(v,z,W,H);x.beginPath();x.arc(p.x,p.y,10,0,7);x.fillStyle='#2e9d4f';x.fill();x.lineWidth=4;const ins=z.reg&&z.reg.tipo==='inventario';x.strokeStyle=ins?'#0b3d1c':'#f2c200';x.stroke();if(!ins){x.fillStyle='#fff';x.font='bold 14px sans-serif';x.textAlign='center';x.fillText('+',p.x,p.y+5);x.textAlign='left'}
-if(sel===z){x.beginPath();x.arc(p.x,p.y,17,0,7);x.lineWidth=3;x.strokeStyle='#10202b';x.stroke()}if(v.s>8e4){x.fillStyle='#10202b';x.font='11px sans-serif';x.fillText(String(z.serie).slice(-5),p.x+13,p.y+4)}}
 if(tp){const p=proyectar(v,tp,W,H);x.beginPath();x.moveTo(p.x,p.y-15);x.lineTo(p.x+14,p.y+11);x.lineTo(p.x-14,p.y+11);x.closePath();x.fillStyle='#d00000';x.fill();x.lineWidth=2;x.strokeStyle='#fff';x.stroke()}
 if(MP.modo==='trafos')dibujarTrafos();
 if(MP.modo==='punto'){const pt=(q,col,r)=>{if(q){const p=proyectar(v,q,W,H);x.beginPath();x.arc(p.x,p.y,r,0,7);x.fillStyle=col;x.fill();x.lineWidth=2;x.strokeStyle='#fff';x.stroke()}};otrosPuntos().forEach(q=>pt(q,'#2e9d4f',6));pt(d.gpsOrig,'#f08c00',7);pt(d.gpsAdj,'#d00000',8);pt(MP.ahora,'#0a58ca',7);
 x.strokeStyle='#10202b';x.lineWidth=2;x.beginPath();x.moveTo(W/2-26,H/2);x.lineTo(W/2+26,H/2);x.moveTo(W/2,H/2-26);x.lineTo(W/2,H/2+26);x.stroke();x.beginPath();x.arc(W/2,H/2,5,0,7);x.strokeStyle='#d00000';x.stroke();
 const mc=MP.o.querySelector('#mc');if(mc)mc.innerHTML='Mira: <b>'+v.lat.toFixed(6)+', '+v.lng.toFixed(6)+'</b> · zoom '+zoomDe(v).toFixed(1)+' · 1 px ≈ '+(111320/v.s).toFixed(2)+' m'}}
-function tocarMapa(px,py){const{v,W,H,con}=MP;if(MP.modo==='trafos'){let b=null,bd=30;for(const q of MP.TT){const p=proyectar(v,q.p,W,H),dd=Math.hypot(p.x-px,p.y-py);if(dd<bd){bd=dd;b=q}}MP.selT=b;fichaT();dibujarMapa();return}if(MP.modo==='punto'){const k=Math.cos(v.lat*Math.PI/180);v.lat-=(py-H/2)/v.s;v.lng+=(px-W/2)/(k*v.s);dibujarMapa();return}let b=null,bd=26;for(const z of [...con,...MP.ext]){const p=proyectar(v,z,W,H),dd=Math.hypot(p.x-px,p.y-py);if(dd<bd){bd=dd;b=z}}MP.sel=b;ficha();dibujarMapa()}
-function ficha(){const f=MP.o.querySelector('#mf'),z=MP.sel;if(!z){f.hidden=true;return}if(z._ext){const r=z.reg;f.hidden=false;f.innerHTML=`<b>${esc(z.serie)}</b> <span class="chip ${r.estado}">${LBL[r.estado]}</span><div class=ms>${r.tipo==='nueva'?'LUMINARIA NUEVA — pendiente de aprobación central':r.tipo==='otro_trafo'?'De otro transformador'+(r.otroTrafo?' ('+esc(r.otroTrafo)+')':'')+' — posible cambio de amarre':r.tipo==='sin_serie'?'Serie no legible — pendiente de identificación':'Luminaria del inventario'}<br>Coordenadas ${z.lat.toFixed(6)}, ${z.lng.toFixed(6)} (${z.fuente==='ajustada'?'corregidas en el mapa':'GPS, sin corrección'})</div><div class=row><button class=pri data-m=val>Ver / editar</button></div>`;return}
-const r=RM.get(z._k);f.hidden=false;
-f.innerHTML=`<b>${esc(z.serie)}</b> <span class="chip ${r?r.estado:''}">${r?LBL[r.estado]:'Pendiente'}</span><div class=ms>Transformador ${esc(z.trafo)} · ${z.potencia?esc(z.potencia)+' W':'W —'} · ${esc(z.tecnologia)||'tecnología —'}<br>${z.fuente?'Coordenadas '+(z.fuente==='ajustada'?'corregidas':z.fuente==='GPS'?'GPS':'del inventario'):'Coordenadas del inventario'} ${z.lat.toFixed(6)}, ${z.lng.toFixed(6)}${z.orig&&(z.orig.lat!==z.lat||z.orig.lng!==z.lng)?'<br>Original del inventario: '+z.orig.lat.toFixed(6)+', '+z.orig.lng.toFixed(6):''}${r&&r.obs?'<br>Novedad: '+esc(r.obs):''}</div><div class=row><button class=pri data-m=val>${r?'Ver / editar validación':'Validar'}</button></div>`}
-function validarDesdeMapa(){const z=MP.sel,cod=MP.cod;if(!z)return;cerrarMapa();if(z._ext){d=structuredClone(z.reg);go('form',d.trafo);return}const r=RM.get(z._k);if(r){d=structuredClone(r);go('form',d.trafo)}else newForm(cod,'inventario',z)}
+function tocarMapa(px,py){const{v,W,H,con}=MP;if(MP.modo==='trafos'){let b=null,bd=30;for(const q of MP.TT){const p=proyectar(v,q.p,W,H),dd=Math.hypot(p.x-px,p.y-py);if(dd<bd){bd=dd;b=q}}MP.selT=b;fichaT();dibujarMapa();return}if(MP.modo==='punto'){const k=Math.cos(v.lat*Math.PI/180);v.lat-=(py-H/2)/v.s;v.lng+=(px-W/2)/(k*v.s);dibujarMapa();return}let b=null,bd=26;for(const z of con){const p=proyectar(v,z,W,H),dd=Math.hypot(p.x-px,p.y-py);if(dd<bd){bd=dd;b=z}}MP.sel=b;ficha();dibujarMapa()}
+function ficha(){const f=MP.o.querySelector('#mf'),z=MP.sel;if(!z){f.hidden=true;return}const r=RM.get(z._k);f.hidden=false;
+f.innerHTML=`<b>${esc(z.serie)}</b> <span class="chip ${r?r.estado:''}">${r?LBL[r.estado]:'Pendiente'}</span><div class=ms>Transformador ${esc(z.trafo)} · ${z.potencia?esc(z.potencia)+' W':'W —'} · ${esc(z.tecnologia)||'tecnología —'}<br>Coordenadas ${z.lat.toFixed(6)}, ${z.lng.toFixed(6)}${r&&r.obs?'<br>Novedad: '+esc(r.obs):''}</div><div class=row><button class=pri data-m=val>${r?'Ver / editar validación':'Validar'}</button></div>`}
+function validarDesdeMapa(){const z=MP.sel,cod=MP.cod;if(!z)return;cerrarMapa();const r=RM.get(z._k);if(r){d=structuredClone(r);go('form',d.trafo)}else newForm(cod,'inventario',z)}
 A.mapa=()=>abrirMapa(V.p);
 function colocarPunto(){const v=MP.v;d.gpsAdj={lat:v.lat,lng:v.lng,ts:new Date().toISOString(),via:'mira'};cerrarMapa();info();draw()}
 async function miGps(){const g=await gps();if(!g)return alert('No se obtuvo GPS. Active la ubicación.');MP.ahora=g;MP.v.lat=g.lat;MP.v.lng=g.lng;dibujarMapa()}
@@ -426,66 +363,6 @@ if(q){const L=S.inv.filter(x=>x.trafo===q.t.codigo),a=L.filter(x=>RM.has(x._k)).
 else if(MP.cercanos){f.hidden=false;f.innerHTML='<b>Más cercanos a usted</b><div class=row>'+MP.cercanos.map(c=>`<button data-m=selt data-c="${esc(c.t.codigo)}">${esc(c.t.codigo)} · ${Math.round(c.d)} m</button>`).join('')+'</div><div class=ms>Compare con lo que ve (calle, poste, esquina) antes de elegir.</div>'}else f.hidden=true}
 async function cercaDeMi(){const g=await gps();if(!g)return alert('No se obtuvo GPS. Active la ubicación.');MP.ahora=g;MP.cercanos=masCercanos(g,MP.TT,3);MP.selT=null;MP.v={lat:g.lat,lng:g.lng,s:2e5};fichaT();dibujarMapa()}
 A.mapat=()=>abrirMapa(null,'trafos');
-/* Luminarias añadidas durante la revisión (nuevas, de otro transformador, sin serie legible) con su ubicación corregida (ajustada) o, si no hay, el GPS. */
-function lumsAnadidas(cod,excluirId){if(!cod)return[];return S.reg.filter(r=>r.trafo===cod&&r.tipo!=='inventario'&&r.id!==excluirId).map(r=>{const c=coordsRegistro(r);return c?{_ext:true,id:r.id,serie:nombreRef(r),trafo:r.trafo,lat:c.lat,lng:c.lng,fuente:c.fuente,estado:r.estado,reg:r}:{_ext:true,sinCoord:true,id:r.id}})}
-/* Luminarias del inventario del transformador: las verificadas se ubican en su coordenada corregida (ajustada > GPS); el resto, en la del inventario. */
-function lumsCorregidas(L,RMp,actual){const o=[];for(const z of L){const r=RMp.get(z._k),excl=actual&&actual.invKey===z._k;let p=null;
-if(r&&esVerificada(r)&&!excl){const c=coordsRegistro(r,()=>z);if(c)p={...z,lat:c.lat,lng:c.lng,fuente:c.fuente,orig:z.lat!=null&&z.lng!=null?{lat:z.lat,lng:z.lng}:null}}
-if(!p&&z.lat!=null&&z.lng!=null)p=z;if(p)o.push(p)}return o}
-/* Todas las luminarias verificadas de todos los transformadores, con coordenada corregida (es lo que se exporta en luminarias_validadas). */
-function lumsVerificadas(){const IM=new Map(S.inv.map(z=>[z._k,z])),ik=k=>IM.get(k);return S.reg.filter(esVerificada).map(r=>{const c=coordsRegistro(r,ik);return c?{_ext:true,id:r.id,serie:nombreRef(r),trafo:r.trafo,lat:c.lat,lng:c.lng,fuente:c.fuente,estado:r.estado,reg:r}:{_ext:true,sinCoord:true,id:r.id}})}
-A.mapav=()=>abrirMapa(null,'verif');
-</script>
-<script>/* INTERFAZ: cierre del transformador (marcar completado / reabrir) y selector de qué exportar. */
-function panelCierre(c){const ci=S.cierres.find(x=>x.trafo===c);
-if(ci)return`<div class=card style="border-left-color:var(--ok)"><b>✔ Transformador completado</b><small>${new Date(ci.fecha).toLocaleString('es-CO')}${ci.usuario?' · '+esc(ci.usuario):''}</small><div class=row><button data-a=reabrir>Reabrir</button></div></div>`;
-const s=resumenTransformador(c,S.inv,S.reg),ok=puedeCerrar(c,S.inv,S.reg)||FUNCIONES.cierreConPendientes;
-return`<button class="pri wide" data-a=cerrar ${ok?'':'disabled'}>Marcar transformador como completado</button>${s.pendientes?`<div class=ms>Faltan ${s.pendientes} luminaria(s) por verificar${FUNCIONES.cierreConPendientes?' (se puede cerrar con aviso)':''}.</div>`:''}`}
-A.cerrar=async()=>{const c=V.p,s=resumenTransformador(c,S.inv,S.reg);if(!puedeCerrar(c,S.inv,S.reg)&&!FUNCIONES.cierreConPendientes)return alert('Aún faltan '+s.pendientes+' luminaria(s) por verificar.');
-if(s.pendientes&&!confirm('ATENCIÓN: quedan '+s.pendientes+' luminaria(s) sin verificar. ¿Cerrar de todos modos?'))return;
-if(!confirm('¿Marcar '+c+' como completado?\nVerificadas: '+s.verificadas+' · no encontradas: '+s.noEncontradas+' · nuevas: '+s.nuevas+' · de otro transformador: '+s.otroTrafo+' · sin serie legible: '+s.sinSerie))return;
-await put('cierres',{trafo:c,fecha:new Date().toISOString(),usuario:S.usuario,resumen:s});await load();render()};
-A.reabrir=async()=>{if(!confirm('¿Reabrir este transformador para modificarlo?'))return;await del('cierres',V.p);await load();render()};
-function initExportUI(){const m2=$('#exm');if(!m2)return;const u=$('#exu'),r=$('#exr');
-u.textContent=S.ultimaExport?'Última exportación: '+new Date(S.ultimaExport).toLocaleString('es-CO')+'.':'Aún no hay una exportación previa.';
-m2.onchange=()=>{r.hidden=m2.value!=='rango'}}
-</script>
-<script>/* INTERFAZ: Revisión de series (órdenes de trabajo). Lote → órdenes (una por serie) → lugares donde aparece → formulario de revisión.
-   Se exporta por aparte (CSV, o ZIP con fotos); no toca el inventario ni los registros de verificación. */
-const ordenPorId=id=>{for(const l of S.lotes){const o=l.ordenes.find(x=>x.id===id);if(o)return{l,o}}return null};
-const revsDeOrden=id=>S.revisiones.filter(r=>r.orden===id);
-const estadoOrden=o=>concluirOrden(o,revsDeOrden(o.id));
-const descargar=(blob,n)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=n;a.click()};
-function vLotes(){m.innerHTML='<button class="pri wide" data-a=lnew>+ Cargar grupo de luminarias</button><button class=wide data-a=lgen>Generar desde series repetidas del inventario</button>'+(S.lotes.length?S.lotes.slice().sort((a,b)=>b.creado.localeCompare(a.creado)).map(l=>{const h=l.ordenes.filter(o=>estadoOrden(o).estado==='Revisada').length;return`<div class=card data-a=lt data-id="${esc(l.id)}"><b>${esc(l.nombre)}</b><span class=chip>${h}/${l.ordenes.length}</span><small>${l.ordenes.length} orden(es) · ${l.creado.slice(0,10)}</small></div>`}).join(''):'<p class=ms>Aún no hay grupos. Cargue un archivo con las series a verificar o genere el grupo desde las series repetidas del inventario.</p>')}
-function vLNew(){m.innerHTML=`<label>Nombre del grupo<input id=ln placeholder="Ej. Series repetidas noviembre"></label><label>Archivo con las luminarias (CSV o JSON)<input id=lf type=file></label><p class=ms>El archivo necesita una columna «serie» y, si la tiene, «transformador». Cada serie se convierte en una orden de trabajo con todos los lugares donde aparece en el inventario.</p>`;
-$('#lf').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const buf=await f.arrayBuffer();let arr;if(/\.json$/i.test(f.name)){const j=JSON.parse(dec(buf));arr=Array.isArray(j)?j:(j.luminarias||j.series||j.lums||[])}else arr=csv(dec(buf));
-const R=ordenesDesdeLista(filasRevisionDesde(arr),S.inv);if(!R.ordenes.length)return alert('Ninguna serie del archivo existe en el inventario cargado.');
-if(!confirm('Se crearán '+R.ordenes.length+' orden(es) de trabajo.'+(R.sinInventario.length?'\n'+R.sinInventario.length+' serie(s) no existen en el inventario y se omiten: '+R.sinInventario.slice(0,5).join(', ')+(R.sinInventario.length>5?'…':''):'')+'\n¿Crear el grupo?'))return;
-await crearLote(($('#ln').value||f.name.replace(/\.[^.]+$/,'')).trim(),'archivo',R.ordenes)}catch(err){alert('No se pudo leer el archivo: '+err.message)}}}
-async function crearLote(nombre,origen,ordenes){const id='LT'+Date.now().toString(36);await put('lotes',{id,nombre,origen,creado:new Date().toISOString(),usuario:S.usuario,ordenes:ordenes.map((o,i)=>({id:id+'-'+String(i+1).padStart(3,'0'),serie:o.serie,ocurrencias:o.ocurrencias}))});await load();go('lote',id)}
-function vLote(id){const l=S.lotes.find(x=>x.id===id);if(!l)return go('lotes');
-m.innerHTML=`<div class=card><b>${esc(l.nombre)}</b><small>${l.ordenes.length} órdenes · ${l.origen==='duplicadas'?'generado desde series repetidas':'cargado desde archivo'}</small></div><div class=row><button class=pri data-a=lcsv>Exportar CSV de la revisión</button><button data-a=lzip>Exportar con fotos (ZIP)</button></div><div class=row><button class=dan data-a=ldel>Eliminar grupo</button></div>`+
-l.ordenes.map(o=>{const c=estadoOrden(o);return`<div class=card data-a=ord data-id="${esc(o.id)}"><b>${esc(o.serie)}</b><span class=chip>${c.estado}</span><small>${o.ocurrencias.map(x=>esc(x.trafo)).join(' · ')} · ${c.revisadas}/${c.total} revisadas</small>${c.texto?`<small>${esc(c.texto)}</small>`:''}</div>`}).join('')}
-function vOrden(id){const p=ordenPorId(id);if(!p)return go('lotes');const{o}=p,rs=revsDeOrden(id),c=concluirOrden(o,rs);
-m.innerHTML=`<div class=card><b style="font-size:20px">${esc(o.serie)}</b><span class=chip>${c.estado}</span><small>${o.ocurrencias.length} lugar(es) donde aparece en el censo</small></div>${c.texto?`<div class=card style="border-left-color:var(--wa)"><b>Conclusión</b><small>${esc(c.texto)}</small></div>`:''}<p class=ms>Revise cada lugar: ¿existe una luminaria con esta serie?</p>`+
-o.ocurrencias.map((oc,i)=>{const r=rs.find(x=>x.ocKey===ocKey(oc)),t=S.trafos.find(z=>z.codigo===oc.trafo)||{};return`<div class=card data-a=roc data-i=${i}><b>${esc(oc.trafo)}</b><span class=chip>${r?HALLAZGOS[r.hallazgo]:'Sin revisar'}</span><small>${esc(t.direccion)} ${esc(t.barrio)}${oc.soloArchivo?' · solo en el archivo':''}</small>${r&&r.hallazgo==='otra_serie'?`<small>Se lee: ${esc(r.serieLeida)}</small>`:''}</div>`}).join('')}
-function vRForm(){m.innerHTML=`<div class=card><b>${esc(d.serieEsp)}</b><small>Serie esperada en el transformador ${esc(d.trafo)}</small></div><label>¿Qué encontró aquí?<select data-k=hallazgo>${Object.entries(HALLAZGOS).map(([k,v])=>`<option value=${k} ${d.hallazgo===k?'selected':''}>${v}</option>`).join('')}</select></label>
-<label>Serie que se lee en la luminaria (si es otra)<input data-k=serieLeida value="${esc(d.serieLeida)}"></label><label>Observaciones<textarea data-k=obs rows=3>${esc(d.obs)}</textarea></label>${CAPTURA}<div class=row><button class=pri data-a=rsave>Guardar revisión</button>${S.revisiones.some(x=>x.id===d.id)?'<button class=dan data-a=rdel>Eliminar</button>':''}</div>`;enlazarCaptura();info();draw()}
-A.lnew=()=>go('lnew');
-A.lgen=async()=>{const R=seriesRepetidas(S.inv);if(!R.length)return alert('No hay series repetidas en el inventario cargado.');if(!confirm('Se encontraron '+R.length+' serie(s) repetida(s). ¿Crear el grupo de revisión?'))return;await crearLote('Series repetidas '+new Date().toISOString().slice(0,10),'duplicadas',R)};
-A.lt=e=>go('lote',e.id);A.ord=e=>go('orden',e.id);
-A.roc=e=>{const{l,o}=ordenPorId(V.p),oc=o.ocurrencias[+e.i],ex=revsDeOrden(o.id).find(r=>r.ocKey===ocKey(oc));
-d=ex?structuredClone(ex):{id:'V'+Date.now().toString(36),rev:true,lote:l.id,orden:o.id,ocKey:ocKey(oc),serieEsp:o.serie,trafo:oc.trafo,serie:'REV-'+o.serie+'-'+oc.trafo,orig:oc.lat!=null?{lat:oc.lat,lng:oc.lng}:null,hallazgo:'encontrada',serieLeida:'',obs:'',fotos:[],gpsOrig:null,gpsAdj:null};go('rform',o.id)};
-A.rsave=async()=>{if(d.hallazgo==='otra_serie'&&!String(d.serieLeida).trim())return alert('Escriba la serie que se lee en la luminaria.');const nf=d.hallazgo==='no_encontrada';
-if(!nf&&!d.fotos.length)return alert('Tome al menos una foto.');if(!nf&&!(d.gpsOrig||d.gpsAdj)&&!confirm('Sin ubicación. ¿Guardar de todos modos?'))return;
-const o=S.revisiones.find(x=>x.id===d.id);if(o)for(const f of o.fotos)if(!d.fotos.includes(f))await del('fotos',f);d.usuario=S.usuario;d.fecha=new Date().toISOString();await put('revisiones',d);await load();go('orden',d.orden)};
-A.rdel=async()=>{if(!confirm('¿Eliminar esta revisión y sus fotos?'))return;const o=S.revisiones.find(x=>x.id===d.id);for(const f of new Set([...d.fotos,...(o?o.fotos:[])]))await del('fotos',f);await del('revisiones',d.id);await load();go('orden',d.orden)};
-A.ldel=async()=>{const l=S.lotes.find(x=>x.id===V.p);if(!confirm('¿Eliminar el grupo «'+l.nombre+'» con sus revisiones y fotos?'))return;for(const r of S.revisiones.filter(x=>x.lote===l.id)){for(const f of r.fotos)await del('fotos',f);await del('revisiones',r.id)}await del('lotes',l.id);await load();go('lotes')};
-const COLS_REV=['lote','serie','transformador','estado_orden','conclusion','conclusion_texto','hallazgo','serie_leida','lat_original_inventario','lng_original_inventario','lat_gps','lng_gps','precision_m','lat_corregida','lng_corregida','fuente_coordenada','observaciones','fotos','tecnico','fecha'];
-const csvRevision=(l,R,NM)=>csvTabla(COLS_REV,filasRevision(l,R,NM).map(f=>[f.lote,f.serie,f.transformador,f.estado_orden,f.conclusion,f.conclusion_texto,f.hallazgo,f.serie_leida,f.lat_original,f.lng_original,f.lat_gps,f.lng_gps,f.precision_m,f.lat_corregida,f.lng_corregida,f.fuente_coordenada,f.observaciones,f.fotos,f.tecnico,f.fecha]));
-A.lcsv=()=>{const l=S.lotes.find(x=>x.id===V.p),R=S.revisiones.filter(r=>r.lote===l.id);descargar(new Blob([csvRevision(l,R,asignarNombres(R))],{type:'text/csv;charset=utf-8'}),'revision_series_'+codigoProyecto(l.nombre)+'_'+new Date().toISOString().slice(0,10)+'.csv')};
-A.lzip=async()=>{const l=S.lotes.find(x=>x.id===V.p),R=S.revisiones.filter(r=>r.lote===l.id),NM=asignarNombres(R),F=[{n:'revision_series.csv',d:new TextEncoder().encode(csvRevision(l,R,NM))}];
-for(const r of R)for(let i=0;i<r.fotos.length;i++){const f=await get('fotos',r.fotos[i]);if(f)F.push({n:'fotos/'+NM.get(r.id)[i]+'.jpg',d:new Uint8Array(await f.blob.arrayBuffer())})}descargar(zip(F),'revision_series_'+codigoProyecto(l.nombre)+'_'+new Date().toISOString().slice(0,10)+'.zip')};
 </script>
 <script>/* INTERFAZ: pantalla de inicio (elegir modo), proyectos de levantamiento nuevo y sus puntos. Reutiliza la captura de GPS, fotos y mira de precisión. */
 let PN=null;
@@ -497,8 +374,7 @@ const CAPTURA=`<div class=row><label class=btn id=bt style="margin:0"><span id=b
 <div class=row><button data-a=zi>Acercar</button><button data-a=zo>Alejar</button><button data-a=ra>Quitar ajuste</button></div><button class="pri wide" data-a=mira>Ubicar con precisión (pantalla completa)</button>
 <p class=ms>Toque el mapa para ubicar el punto donde realmente está. Naranja: GPS original · rojo: ajustada · verde: otros puntos del proyecto.</p>`;
 function vHome(){m.innerHTML=`<div class="card big2" data-a=nav data-v=list><b>Verificar luminarias</b><small>Inventario existente: validar luminarias por transformador.</small><small>${S.trafos.length} transformadores · ${S.reg.length} registros</small></div>
-<div class="card big2" data-a=nav data-v=plist><b>Levantamiento nuevo</b><small>Proyecto de expansión: levantar postes, redes y puntos de nueva iluminación.</small><small>${S.proyectos.length} proyectos · ${S.puntos.length} puntos</small>
-<div class="card big2" data-a=nav data-v=lotes><b>Revisión de series</b><small>Órdenes de trabajo para verificar series repetidas en el censo.</small><small>${S.lotes.length} grupo(s) · ${S.revisiones.length} revisión(es)</small></div>`}
+<div class="card big2" data-a=nav data-v=plist><b>Levantamiento nuevo</b><small>Proyecto de expansión: levantar postes, redes y puntos de nueva iluminación.</small><small>${S.proyectos.length} proyectos · ${S.puntos.length} puntos</small></div>`}
 function vPList(){m.innerHTML='<button class="pri wide" data-a=pnew>+ Nuevo proyecto de levantamiento</button>'+(S.proyectos.length?S.proyectos.slice().sort((a,b)=>b.creado.localeCompare(a.creado)).map(p=>`<div class=card data-a=pd data-p="${esc(p.id)}"><b>${esc(p.nombre)}</b>${p.orden?'<span class=chip>OT '+esc(p.orden)+'</span>':''}<small>${esc(p.barrio)}${p.zona?' · '+esc(p.zona):''} ${p.via?'· '+esc(p.via):''}</small><small>${S.puntos.filter(x=>x.proy===p.id).length} puntos · ${p.creado.slice(0,10)}</small></div>`).join(''):'<p class=ms>Aún no hay proyectos. Cree uno para empezar el levantamiento.</p>')}
 function vPNew(){const p=PN;m.innerHTML=`<label>Nombre del proyecto<input data-pk=nombre value="${esc(p.nombre)}" placeholder="Ej. Expansión barrio X"></label><label>Fecha de solicitud<input type=date data-pk=fechaSol value="${esc(p.fechaSol)}"></label><label>Número de orden de trabajo<input data-pk=orden autocapitalize=characters value="${esc(p.orden)}"></label>
 <label>Quien solicita<select data-pk=solicitante><option value="">— Seleccione —</option>${SOLICITANTES.map(o=>`<option value="${o}" ${o===p.solicitante?'selected':''}>${o}</option>`).join('')}</select></label><label>Nombre de la persona que solicita<input data-pk=solicNombre value="${esc(p.solicNombre)}"></label>
