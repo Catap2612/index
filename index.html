@@ -40,7 +40,7 @@ button:disabled{opacity:.45}
 <script>/* NÚCLEO: estado global, constantes y utilidades puras. */
 /* Interruptores de funciones: false = oculta y sin efecto (el código y los datos guardados se conservan). */
 const FUNCIONES={distanciaReferencia:false,cierreConPendientes:false,revisionSeries:false}; // cierreConPendientes: true permite cerrar un transformador con aviso aunque falten luminarias
-const ESQUEMA=2,APP_VERSION='1.11.2'; // versión con validaciones, importación transaccional y tolerancia a errores // ESQUEMA: versión del contrato de datos (ver docs/ESQUEMA_DATOS.md)
+const ESQUEMA=2,APP_VERSION='1.12.6'; // versión con validaciones, importación transaccional y tolerancia a errores // ESQUEMA: versión del contrato de datos (ver docs/ESQUEMA_DATOS.md)
 const $=s=>document.querySelector(s),m=$('#m');
 let db,S={trafos:[],inv:[],reg:[],proyectos:[],puntos:[],cierres:[],lotes:[],revisiones:[],ultimaExport:'',catMat:[],usuario:''},RM=new Map,V={v:'home',p:null,q:''},d=null,GP=null,ZOOM=0.0008;
 const LBL={coincide:'Coincide',novedad:'Con novedad',no_encontrada:'No encontrada',nueva:'Nueva',otro_trafo:'De otro trafo',sin_serie:'Sin serie'};
@@ -260,12 +260,12 @@ async function exp(){const f=leerFiltroExport();if(!f)return;const n=await expor
 <script>/* INTERFAZ: navegación, vistas, formulario de registro, mapa y reglas de guardado. */
 /* ---------- navegación ---------- */
 const go=(v,p)=>{if(v==='form'&&V.v!=='form'&&d&&S.cierres.some(c=>c.trafo===d.trafo)){if(!confirm('Este transformador está completado. ¿Reabrirlo para modificarlo?'))return;S.cierres=S.cierres.filter(c=>c.trafo!==d.trafo);del('cierres',d.trafo)}if((V.v==='form'||V.v==='pform'||V.v==='rform')&&v!=='form'&&v!=='pform'&&v!=='rform'&&d)limpiarHuerfanas();V.v=v;V.p=p;render();scrollTo(0,0)};
-function render(){if(!FUNCIONES.revisionSeries&&['lotes','lnew','lote','orden','rform'].includes(V.v))V.v='home';const v=V.v,N={home:0,list:1,tdet:1,form:1,plist:2,pnew:2,pdet:2,pform:2,data:3,lotes:0,lnew:0,lote:0,orden:0,rform:0};['n0','n1','n2','n3'].forEach((id,i)=>$('#'+id).className=N[v]===i?'on':'');
-$('#bk').hidden=!['form','tdet','pform','pnew','pdet','lotes','lnew','lote','orden','rform'].includes(v);
-$('#ti').textContent={home:'Amarres AP · Terreno',list:'Transformadores',tdet:V.p,form:v==='form'&&d?TIT[d.tipo]:'',plist:'Levantamientos nuevos',pnew:'Proyecto',pdet:(S.proyectos.find(p=>p.id===V.p)||{}).nombre||'Proyecto',pform:v==='pform'&&d?'Punto '+etiquetaPunto(d.n):'',data:'Datos y exportación',lotes:'Revisión de series',lnew:'Cargar luminarias',lote:(S.lotes.find(l=>l.id===V.p)||{}).nombre||'Grupo',orden:(ordenPorId(V.p)||{o:{}}).o.serie||'Orden',rform:'Revisar lugar'}[v];
-({home:vHome,list:vList,tdet:()=>vTrafo(V.p),form:vForm,plist:vPList,pnew:vPNew,pdet:()=>vPDet(V.p),pform:vPForm,data:vData,lotes:vLotes,lnew:vLNew,lote:()=>vLote(V.p),orden:()=>vOrden(V.p),rform:vRForm})[v]()}
+function render(){if(!FUNCIONES.revisionSeries&&['lotes','lnew','lote','orden','rform'].includes(V.v))V.v='home';const v=V.v,N={home:0,list:1,tdet:1,form:1,plist:2,pnew:2,pdet:2,pform:2,data:3,censo:3,lotes:0,lnew:0,lote:0,orden:0,rform:0};['n0','n1','n2','n3'].forEach((id,i)=>$('#'+id).className=N[v]===i?'on':'');
+$('#bk').hidden=!['form','tdet','pform','pnew','pdet','censo','lotes','lnew','lote','orden','rform'].includes(v);
+$('#ti').textContent={home:'Amarres AP · Terreno',list:'Transformadores',tdet:V.p,form:v==='form'&&d?TIT[d.tipo]:'',plist:'Levantamientos nuevos',pnew:'Proyecto',pdet:(S.proyectos.find(p=>p.id===V.p)||{}).nombre||'Proyecto',pform:v==='pform'&&d?'Punto '+etiquetaPunto(d.n):'',data:'Datos y exportación',censo:'Censo oficial',lotes:'Revisión de series',lnew:'Cargar luminarias',lote:(S.lotes.find(l=>l.id===V.p)||{}).nombre||'Grupo',orden:(ordenPorId(V.p)||{o:{}}).o.serie||'Orden',rform:'Revisar lugar'}[v];
+({home:vHome,list:vList,tdet:()=>vTrafo(V.p),form:vForm,plist:vPList,pnew:vPNew,pdet:()=>vPDet(V.p),pform:vPForm,data:vData,censo:vCenso,lotes:vLotes,lnew:vLNew,lote:()=>vLote(V.p),orden:()=>vOrden(V.p),rform:vRForm})[v]()}
 const A={
-nav:e=>go(e.v),back:()=>({form:()=>go('tdet',d.trafo),pform:()=>go('pdet',d.proy),pdet:()=>go('plist'),pnew:()=>go('plist'),tdet:()=>go('list'),lotes:()=>go('home'),lnew:()=>go('lotes'),lote:()=>go('lotes'),orden:()=>go('lote',ordenPorId(V.p).l.id),rform:()=>go('orden',d.orden)})[V.v](),
+nav:e=>go(e.v),back:()=>({censo:()=>go('data'),form:()=>go('tdet',d.trafo),pform:()=>go('pdet',d.proy),pdet:()=>go('plist'),pnew:()=>go('plist'),tdet:()=>go('list'),lotes:()=>go('home'),lnew:()=>go('lotes'),lote:()=>go('lotes'),orden:()=>go('lote',ordenPorId(V.p).l.id),rform:()=>go('orden',d.orden)})[V.v](),
 t:e=>{S.ultimo=e.t;put('meta',{k:'ultimo',v:e.t});go('tdet',e.t)},
 nw:e=>newForm(V.p,e.tipo),inv:e=>newForm(V.p,'inventario',S.inv.find(x=>x._k===e.k)),
 reg:e=>{d=structuredClone(S.reg.find(r=>r.id===e.id));go('form',d.trafo)},
@@ -329,7 +329,7 @@ function vData(){m.innerHTML=`<label>Nombre del técnico<input id=us value="${es
 <p class=ms>Base: ${S.trafos.length} transformadores · ${S.inv.length} luminarias. Registros de terreno: ${S.reg.length} · fotos: ${S.reg.reduce((a,r)=>a+r.fotos.length,0)}.</p>
 <label>Tipo de archivo CSV<select id=ck><option value=auto>Detectar automáticamente</option><option value=T>Transformadores</option><option value=L>Luminarias</option></select></label>
 <label>Importar base de trabajo (CSV o JSON)<input id=fi type=file multiple></label>
-<h3>Mapa de fondo</h3><label>Fondo del mapa<select id=fo><option value=ninguno>Sin fondo (cuadrícula)</option><option value=paquete>Mapa cargado (sin conexión)</option><option value=linea>Calles en línea (OpenStreetMap)</option></select></label><div id=fi2 class=ms></div><label>Cargar mapa sin conexión (.zip con teselas z/x/y)<input id=fm type=file></label>
+<div class=card><b>Censo oficial y depuración</b><small>Comparar versiones del inventario por ID_LUM y serie; importar antecedentes de órdenes sin modificar el censo operativo.</small><button class=pri data-a=censoOpen>Abrir módulo de censo</button></div><h3>Mapa de fondo</h3><label>Fondo del mapa<select id=fo><option value=ninguno>Sin fondo (cuadrícula)</option><option value=paquete>Mapa cargado (sin conexión)</option><option value=linea>Calles en línea (OpenStreetMap)</option></select></label><div id=fi2 class=ms></div><label>Cargar mapa sin conexión (.zip con teselas z/x/y)<input id=fm type=file></label>
 <div id=ar></div><div class=row><button data-a=area>Calcular área de cartografía</button></div>
 <h3>Exportar</h3><label>Qué exportar<select id=exm><option value=todo>Todo</option><option value=nuevo>Solo lo nuevo desde la última exportación</option><option value=rango>Rango de fechas</option></select></label><div id=exr hidden class=row><label>Desde<input type=date id=exd></label><label>Hasta<input type=date id=exh></label></div><p class=ms id=exu></p>
 <div class=row><button class=pri data-a=exp>Exportar levantamiento (ZIP)</button></div>
@@ -576,5 +576,229 @@ A.areaGeo=()=>{if(!ZONAS)return;const a=document.createElement('a');a.href=URL.c
 <script>/* ARRANQUE: abre la base, carga datos, registra el Service Worker. */
 /* ---------- arranque ---------- */
 (async()=>{await open();await load();await limpiarFotosHuerfanas();await cargarFondo();render();if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();if(false&&'serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{})})();
+</script>
+
+<script>
+
+/* CENSO OFICIAL: importación XLSX sin conexión, comparación por ID_LUM/serie e historial de órdenes.
+   Los cambios se guardan como propuestas; nunca sobrescriben el censo de trabajo ni los registros de campo. */
+const CENSO_META='amarres_censo_v1';
+const cNorm=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
+const cNum=v=>{if(v===null||v===undefined||String(v).trim()==='')return null;let z=String(v).trim().replace(',','.');if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(z))return null;let n=Number(z);return Number.isFinite(n)?n:null};
+const cGet=(o,...keys)=>{const wanted=keys.map(cNorm);for(const k of Object.keys(o||{})){if(wanted.includes(cNorm(k))&&o[k]!==''&&o[k]!=null)return o[k]}return ''};
+async function zipXlsx(buf){
+ const u=new Uint8Array(buf),dv=new DataView(buf);let e=-1;
+ for(let i=u.length-22;i>=Math.max(0,u.length-65558);i--)if(dv.getUint32(i,true)===0x06054b50){e=i;break}
+ if(e<0)throw Error('El archivo no parece ser un XLSX válido.');
+ const count=dv.getUint16(e+10,true),cd=dv.getUint32(e+16,true),files=new Map();
+ for(let p=cd,n=0;n<count;n++){
+  if(dv.getUint32(p,true)!==0x02014b50)throw Error('Directorio ZIP inválido.');
+  const method=dv.getUint16(p+10,true),csize=dv.getUint32(p+20,true),nl=dv.getUint16(p+28,true),el=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),off=dv.getUint32(p+42,true),name=new TextDecoder().decode(u.slice(p+46,p+46+nl));
+  files.set(name,{method,csize,off});p+=46+nl+el+cl;
+ }
+ async function read(name){
+  const f=files.get(name);if(!f)return null;
+  const p=f.off;if(dv.getUint32(p,true)!==0x04034b50)throw Error('Entrada ZIP dañada: '+name);
+  const nl=dv.getUint16(p+26,true),el=dv.getUint16(p+28,true),start=p+30+nl+el,raw=u.slice(start,start+f.csize);
+  if(f.method===0)return new TextDecoder().decode(raw);
+  if(f.method!==8)throw Error('Compresión XLSX no compatible: '+f.method);
+  if(typeof DecompressionStream==='undefined')throw Error('Este navegador no permite leer XLSX sin conexión. Guarda el archivo como CSV UTF-8 e impórtalo.');
+  let stream;try{stream=new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))}catch{throw Error('No se pudo descomprimir el XLSX en este navegador. Usa CSV UTF-8.')}
+  return await new Response(stream).text();
+ }
+ const wb=await read('xl/workbook.xml'),rels=await read('xl/_rels/workbook.xml.rels');
+ if(!wb||!rels)throw Error('El XLSX no contiene estructura de libro válida.');
+ const xd=new DOMParser().parseFromString(wb,'application/xml'),rd=new DOMParser().parseFromString(rels,'application/xml');
+ const relMap={};[...rd.getElementsByTagName('Relationship')].forEach(x=>relMap[x.getAttribute('Id')]=x.getAttribute('Target'));
+ let shared=[];const sx=await read('xl/sharedStrings.xml');if(sx){const sd=new DOMParser().parseFromString(sx,'application/xml');shared=[...sd.getElementsByTagName('si')].map(si=>[...si.getElementsByTagName('t')].map(t=>t.textContent).join(''))}
+ const sheets=[...xd.getElementsByTagName('sheet')],out=[];
+ for(const sh of sheets){
+  const rid=sh.getAttribute('r:id'),target=relMap[rid];if(!target)continue;
+  const path=target.startsWith('/')?target.slice(1):'xl/'+target.replace(/^\.?\//,'');
+  const xml=await read(path);if(!xml)continue;
+  const doc=new DOMParser().parseFromString(xml,'application/xml');
+  const rows=[...doc.getElementsByTagName('row')].map(row=>{
+   const vals=[];for(const cell of [...row.children].filter(x=>x.localName==='c')){
+    const ref=cell.getAttribute('r')||'',col=(ref.match(/[A-Z]+/)||['A'])[0];let ci=0;for(const ch of col)ci=ci*26+ch.charCodeAt(0)-64;ci--;
+    const type=cell.getAttribute('t'),v=cell.getElementsByTagName('v')[0]?.textContent??'';
+    let value=type==='s'?shared[Number(v)]??'':type==='inlineStr'?[...cell.getElementsByTagName('t')].map(t=>t.textContent).join(''):type==='b'?v==='1':v;
+    vals[ci]=value;
+   }return vals;
+  }).filter(r=>r.some(v=>v!==undefined&&v!==''));
+  out.push({name:sh.getAttribute('name')||'Hoja',rows});
+ }
+ return out;
+}
+function cSheetRows(sheet){
+ if(!sheet||!sheet.rows.length)return [];
+ let rows=sheet.rows;
+ // Algunas exportaciones antiguas llegan con cada fila CSV distribuida en varias celdas.
+ if(rows[0].filter(v=>v!==undefined&&v!==null&&v!=='').length===1&&String(rows[0][0]).includes(';')){
+  const splitLine=line=>{const a=[];let q=false,c='';for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){c+='"';i++}else q=!q}else if(ch===';'&&!q){a.push(c);c=''}else c+=ch}a.push(c);return a};
+  const h=splitLine(String(rows[0][0]));
+  return rows.slice(1).map(r=>splitLine(r.filter(v=>v!==undefined&&v!==null&&v!=='').join(''))).map((r)=>Object.fromEntries(h.map((k,i)=>[k,r[i]??''])));
+ }
+ const headers=rows[0].map(v=>String(v??'').trim());
+ if(!headers.some(Boolean))throw Error('La hoja no tiene encabezados.');
+ return rows.slice(1).filter(r=>r.some(v=>v!==undefined&&v!==null&&String(v).trim()!=='')).map(r=>Object.fromEntries(headers.map((h,i)=>[h,r[i]??''])));
+}
+async function cReadXlsx(file){
+ const sheets=await zipXlsx(await file.arrayBuffer());
+ if(!sheets.length)throw Error('El libro no contiene hojas.');
+ const parsed=sheets.map(sh=>({name:sh.name,rows:cSheetRows(sh)}));
+ return parsed;
+}
+const cCoords=r=>{let lat=cNum(cGet(r,'LATITUD','S_LATITUD')),rawLng=cGet(r,'LONGITUD','S_LONGITUD'),lng=cNum(rawLng);
+ if(lng==null&&/^-?\d{1,3}(?:\.\d{3}){2,}$/.test(String(rawLng).trim()))lng=Number(String(rawLng).replace(/\./g,''))/1e10;
+ if(lat!=null&&Math.abs(lat)>90&&Math.abs(lat)<1000)lat=lat/100;
+ if(lng!=null&&Math.abs(lng)>180){if(Math.abs(lng)>=1e6)lng=lng/1e10;else if(Math.abs(lng)<1000)lng=lng/100;}
+ return coordValida({lat,lng})?{lat,lng}:null};
+function cInventory(rows,type){
+ const out=[],bad=[];const idKey=type==='L'?'ID_LUM':'ID_TRAFO';
+ for(let i=0;i<rows.length;i++){
+  const r=rows[i],id=String(cGet(r,idKey)).trim();
+  if(!id){bad.push({fila:i+2,motivo:'Sin '+idKey});continue}
+  const item=type==='L'?{
+   id,serie:String(cGet(r,'SERIE')).trim(),trafoId:String(cGet(r,'ID_TRAFO')).trim(),trafo:String(cGet(r,'TRAFO')).trim(),
+   potencia:String(cGet(r,'POTENCIA')).trim(),tecnologia:String(cGet(r,'TECNOLOGIA')).trim(),marca:String(cGet(r,'MARCA')).trim(),
+   lat:cCoords(r)?.lat??null,lng:cCoords(r)?.lng??null,barrio:String(cGet(r,'BARRIO')).trim(),direccion:String(cGet(r,'DIRECCION')).trim(),raw:r
+  }:{
+   id,codigo:String(cGet(r,'TRAFO')).trim(),kva:String(cGet(r,'KVA','POTENCIA_TRAFO')).trim(),
+   lat:cCoords(r)?.lat??null,lng:cCoords(r)?.lng??null,barrio:String(cGet(r,'BARRIO')).trim(),direccion:String(cGet(r,'DIRECCION')).trim(),raw:r
+  };
+  out.push(item);
+ }
+ const ids=new Map;out.forEach(x=>ids.set(x.id,(ids.get(x.id)||0)+1));
+ const dup=[...ids].filter(x=>x[1]>1).map(x=>x[0]);
+ const series=new Map;if(type==='L')for(const x of out){const k=cNorm(x.serie);if(k){if(!series.has(k))series.set(k,[]);series.get(k).push(x.id)}}
+ return{out,bad,dup,dupSeries:[...series].filter(x=>x[1].length>1).map(([serie,ids])=>({serie,ids}))};
+}
+function cSameValue(k,a,b){
+ if(['potencia','lat','lng'].includes(k)){
+  const x=cNum(a),y=cNum(b);if(x==null&&y==null)return true;if(x==null||y==null)return false;
+  return Math.abs(x-y)<=(k==='lat'||k==='lng'?0.00001:0.001);
+ }
+ return cNorm(a)===cNorm(b);
+}
+function cDiff(oldL,newL,oldT,newT){
+ const changes=[],oldById=new Map(oldL.map(x=>[String(x.id),x])),oldBySeries=new Map(),newSeriesCount=new Map(),seenOld=new Set();
+ for(const x of oldL){const k=cNorm(x.serie);if(k){if(!oldBySeries.has(k))oldBySeries.set(k,[]);oldBySeries.get(k).push(x)}}
+ for(const x of newL){const k=cNorm(x.serie);if(k)newSeriesCount.set(k,(newSeriesCount.get(k)||0)+1)}
+ for(const n of newL){
+  const sk=cNorm(n.serie),matches=sk?(oldBySeries.get(sk)||[]):[],uniqueSeries=matches.length===1&&newSeriesCount.get(sk)===1;
+  let o=null,by='id';
+  // La serie física tiene prioridad cuando es única en ambas versiones.
+  if(uniqueSeries){o=matches[0];by='serie'}
+  else if(oldById.has(String(n.id))){o=oldById.get(String(n.id));by='id'}
+  if(o){
+   seenOld.add(String(o.id));
+   if(by==='serie'&&String(o.id)!==String(n.id)){
+    changes.push({tipo:'id_cambiado_misma_serie',idAnterior:o.id,idActual:n.id,serie:n.serie,anterior:o,actual:n,diff:[{campo:'id',anterior:o.id,actual:n.id}],estado:'requiere_revision'});
+   }else{
+    const fields=['serie','trafoId','trafo','potencia','tecnologia','marca','lat','lng','barrio','direccion'];
+    const diff=fields.filter(k=>!cSameValue(k,o[k],n[k])).map(k=>({campo:k,anterior:o[k]??'',actual:n[k]??''}));
+    if(diff.length)changes.push({tipo:'modificacion',idAnterior:o.id,idActual:n.id,serie:n.serie,anterior:o,actual:n,diff,estado:'pendiente'});
+   }
+   continue;
+  }
+  if(matches.length>0||newSeriesCount.get(sk)>1){
+   changes.push({tipo:'serie_ambigua',idAnterior:matches.map(x=>x.id).join(', '),idActual:n.id,serie:n.serie,anterior:matches,actual:n,diff:[],estado:'requiere_revision'});
+  }else changes.push({tipo:'alta_no_coincidente',idAnterior:'',idActual:n.id,serie:n.serie,anterior:null,actual:n,diff:[],estado:'pendiente'});
+ }
+ for(const o of oldL)if(!seenOld.has(String(o.id)))changes.push({tipo:'no_encontrada_en_nuevo_archivo',idAnterior:o.id,idActual:'',serie:o.serie,anterior:o,actual:null,diff:[],estado:'requiere_revision'});
+ return changes;
+}
+async function cGetState(){const r=await get('meta',CENSO_META);return r?.v||{current:null,history:[],orders:[],changes:[]}}
+async function cSaveState(v){await put('meta',{k:CENSO_META,v})}
+function cSummary(changes){const c={};for(const x of changes)c[x.tipo]=(c[x.tipo]||0)+1;return c}
+function cOrderAnalysis(st){
+ const inv=st.current?.luminarias||[],orders=st.orders||[],bySerie=new Map();
+ for(const x of inv){const k=cNorm(x.serie);if(k){if(!bySerie.has(k))bySerie.set(k,[]);bySerie.get(k).push(x)}}
+ const out=orders.map(o=>{
+  const series=[o.serie,o.encontrada,o.retirada,o.instalada].map(cNorm).filter((v,i,a)=>v&&a.indexOf(v)===i);
+  const exact=series.flatMap(k=>bySerie.get(k)||[]);
+  const uniq=[...new Map(exact.map(x=>[x.id,x])).values()];
+  if(uniq.length===1)return{orden:o.orden,fecha:o.fecha,trafo:o.trafo,serie:uniq[0].serie,id:uniq[0].id,tipo:'coincidencia_por_serie',distancia:null};
+  if(uniq.length>1)return{orden:o.orden,fecha:o.fecha,trafo:o.trafo,serie:series.join(', '),id:uniq.map(x=>x.id).join(', '),tipo:'serie_ambigua',distancia:null};
+  const p=coordValida({lat:o.lat,lng:o.lng})?{lat:o.lat,lng:o.lng}:null;
+  if(p){let cand=inv.filter(x=>coordValida(x)&&(!o.trafo||!x.trafo||cNorm(x.trafo)===cNorm(o.trafo))).map(x=>({x,d:distM(p,x)})).filter(z=>z.d!=null&&z.d<=30).sort((a,b)=>a.d-b.d).slice(0,3);
+   if(cand.length)return{orden:o.orden,fecha:o.fecha,trafo:o.trafo,serie:'',id:cand.map(z=>z.x.id).join(', '),tipo:'candidato_geografico_no_confirmado',distancia:cand.map(z=>Math.round(z.d)).join(', ')+' m'};
+  }
+  return{orden:o.orden,fecha:o.fecha,trafo:o.trafo,serie:series.join(', '),id:'',tipo:'sin_coincidencia',distancia:null}
+ });
+ const count={};out.forEach(x=>count[x.tipo]=(count[x.tipo]||0)+1);return{out,count};
+}
+function cEsc(v){return esc(String(v??''))}
+function cRender(){
+ const box=$('#censoResultado');if(!box)return;
+ cGetState().then(st=>{
+  const cur=st.current,changes=st.changes||[],sum=cSummary(changes);
+  box.innerHTML=`<div class=card><b>Inventario oficial importado</b><small>${cur?esc(cur.fecha)+' · '+cur.luminarias.length+' luminarias · '+cur.trafos.length+' transformadores':'Aún no has importado un inventario oficial.'}</small><small>${st.orders?.length||0} órdenes históricas importadas</small></div>
+  ${cur?`<h3>Comparación más reciente</h3><div class=row>${Object.entries(sum).map(([k,v])=>`<span class=chip>${esc(k.replaceAll('_',' '))}: ${v}</span>`).join('')}</div>`:''}
+  <h3>Importar inventario oficial</h3><p class=ms>Selecciona el Excel de luminarias y el de transformadores. La importación crea una nueva versión y compara con la anterior; no modifica el inventario operativo ni los registros de campo.</p>
+  <label>Excel de luminarias (.xlsx)<input id=cLum type=file accept=".xlsx"></label>
+  <label>Excel de transformadores (.xlsx, opcional)<input id=cTrafo type=file accept=".xlsx"></label>
+  <button class=pri data-a=cImport>Importar y comparar inventario</button>
+  <h3>Órdenes históricas</h3><p class=ms>Importa el Excel de operación general. Se guardan como antecedentes; no actualizan luminarias automáticamente.</p>
+  <label>Excel de órdenes (.xlsx)<input id=cOrders type=file accept=".xlsx"></label>
+  <button data-a=cImportOrders>Importar órdenes</button><div id=cOrderResults></div>
+  ${changes.length?`<h3>Detalle de diferencias (${changes.length})</h3><div class=card><button data-a=cExport>Exportar diferencias CSV</button><button data-a=cShowChanges>Ver primeras 100 diferencias</button><div id=cChanges></div></div>`:''}`;
+  const oa=cOrderAnalysis(st),ob=$('#cOrderResults');
+  if(ob&&st.orders?.length)ob.innerHTML=`<h3>Cruce preliminar de órdenes</h3><p class=ms>Coincidencias por serie: ${oa.count.coincidencia_por_serie||0} · Series ambiguas: ${oa.count.serie_ambigua||0} · Candidatos geográficos (≤30 m): ${oa.count.candidato_geografico_no_confirmado||0} · Sin coincidencia: ${oa.count.sin_coincidencia||0}. Los candidatos geográficos nunca se asignan automáticamente.</p><button data-a=cShowOrderMatches>Ver primeras 100 coincidencias</button><div id=cOrderMatches></div>`;
+ });
+}
+async function cImport(){
+ const lf=$('#cLum')?.files?.[0],tf=$('#cTrafo')?.files?.[0];if(!lf||!tf)return alert('Selecciona el archivo de luminarias. El de transformadores es opcional.');
+ try{
+  const [ls,ts]=await Promise.all([cReadXlsx(lf),tf?cReadXlsx(tf):Promise.resolve([])]);
+  const lsh=ls.find(x=>x.rows.length&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='ID_LUM'))||ls[0];
+  const tsh=ts.find(x=>x.rows.length&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='ID_TRAFO'))||ts[0];
+  const L=cInventory(lsh.rows,'L'),T=cInventory(tsh.rows,'T');
+  if(!L.out.length)throw Error('No se encontraron registros con ID_LUM. Revisa la hoja y los encabezados.');
+  if(L.dup.length||T.dup.length)throw Error('Hay IDs duplicados. No se importó para evitar ambigüedades. ID_LUM: '+L.dup.length+'; ID_TRAFO: '+T.dup.length);
+  const st=await cGetState(),changes=st.current?cDiff(st.current.luminarias,L.out,st.current.trafos,T.out):[];
+  const hist=[...(st.history||[]),{fecha:new Date().toISOString(),archivoL:lf.name,archivoT:tf.name,luminarias:L.out.length,trafos:T.out.length,duplicadasSerie:L.dupSeries.length}];
+  st.history=hist;st.changes=changes;st.current={fecha:new Date().toISOString(),archivoL:lf.name,archivoT:tf.name,luminarias:L.out,trafos:T.out,alertas:{luminariasSinID:L.bad.length,trafosSinID:T.bad.length,seriesDuplicadas:L.dupSeries,transformadoresSinLuminarias:T.out.filter(t=>!L.out.some(l=>l.trafoId===t.id)).map(t=>t.id)}};
+  await cSaveState(st);alert('Inventario importado: '+L.out.length+' luminarias y '+T.out.length+' transformadores. Diferencias detectadas: '+changes.length+'.');cRender();
+ }catch(e){console.error(e);alert('No se importó el inventario: '+(e.message||e))}
+}
+async function cImportOrders(){
+ const f=$('#cOrders')?.files?.[0];if(!f)return alert('Selecciona el archivo de órdenes.');
+ try{
+  const sheets=await cReadXlsx(f),sh=sheets.find(x=>x.rows.length&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='S_NO_REPORTE'))||sheets[0];
+  const matSh=sheets.find(x=>x.rows.length&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='ORDEN')&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='MATERIAL'));
+  const mats=new Map();
+  if(matSh)for(const r of matSh.rows){const no=String(cGet(r,'ORDEN')).trim();if(!no)continue;if(!mats.has(no))mats.set(no,[]);mats.get(no).push({material:String(cGet(r,'MATERIAL')).trim(),cantidad:String(cGet(r,'CANTIDAD')).trim(),tipo:String(cGet(r,'TIPO')).trim(),serie:String(cGet(r,'SERIE')).trim(),tecnologia:String(cGet(r,'TECNOLOGIA')).trim(),potencia:String(cGet(r,'POTENCIA')).trim(),codigo:String(cGet(r,'COD MAT')).trim()})}
+  const rows=sh.rows.map(r=>{
+   const orden=String(cGet(r,'S_NO_REPORTE')).trim();
+   return{
+   orden,fecha:String(cGet(r,'S_FECHA_REPORTE')).trim(),
+   trafo:String(cGet(r,'S_TRAFO')).trim(),direccion:String(cGet(r,'S_DIRECCION')).trim(),barrio:String(cGet(r,'S_BARRIO')).trim(),
+   serie:String(cGet(r,'S_NO_SERIE_LUM')).trim(),encontrada:String(cGet(r,'S_LUMINARIA_ENCONTRADA')).trim(),
+   retirada:String(cGet(r,'S_LUMINARIA_RETIRADA')).trim(),instalada:String(cGet(r,'S_LUMINARIA_INSTALADA')).trim(),
+   potenciaRetirada:String(cGet(r,'S_POTENCIA_RETIRADA')).trim(),potenciaInstalada:String(cGet(r,'S_POTENCIA_INSTALADA')).trim(),
+   marcaEncontrada:String(cGet(r,'S_MARCA_ENCONTRADA')).trim(),marcaInstalada:String(cGet(r,'S_MARCA_INSTALADA')).trim(),
+   lat:cCoords(r)?.lat??null,lng:cCoords(r)?.lng??null,observacion:String(cGet(r,'S_OBSERVACION_EJECUCION')).trim(),materiales:mats.get(orden)||[]
+  }}).filter(x=>x.orden||x.serie||x.trafo);
+  const st=await cGetState(),uniq=new Map((st.orders||[]).map(x=>[x.orden+'|'+x.fecha+'|'+x.trafo,x]));
+  for(const x of rows){const k=x.orden+'|'+x.fecha+'|'+x.trafo;if(!uniq.has(k))uniq.set(k,x)}
+  st.orders=[...uniq.values()];await cSaveState(st);
+  alert('Órdenes importadas como antecedentes: '+rows.length+'; materiales asociados: '+[...mats.values()].reduce((a,x)=>a+x.length,0)+'. No se modificó el inventario.');cRender();
+ }catch(e){console.error(e);alert('No se pudieron importar las órdenes: '+(e.message||e))}
+}
+function cExport(){
+ cGetState().then(st=>{const rows=st.changes||[];const cols=['tipo','idAnterior','idActual','serie','estado','campos'];const lines=[cols.join(';'),...rows.map(x=>[x.tipo,x.idAnterior,x.idActual,x.serie,x.estado,(x.diff||[]).map(d=>d.campo+': '+d.anterior+' → '+d.actual).join(' | ')].map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';'))];const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='diferencias_censo.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)})
+}
+function cShowChanges(){
+ cGetState().then(st=>{const b=$('#cChanges');if(!b)return;b.innerHTML=(st.changes||[]).slice(0,100).map(x=>`<div class=card><b>${esc(x.serie||'Sin serie')}</b><small>${esc(x.tipo.replaceAll('_',' '))} · ID anterior ${esc(x.idAnterior)} · ID actual ${esc(x.idActual)}</small>${(x.diff||[]).map(d=>`<small>${esc(d.campo)}: ${esc(d.anterior)} → ${esc(d.actual)}</small>`).join('')}</div>`).join('')||'<p class=ms>Sin diferencias.</p>'})
+}
+
+function cShowOrderMatches(){
+ cGetState().then(st=>{const box=$('#cOrderMatches');if(!box)return;const rows=cOrderAnalysis(st).out;box.innerHTML=rows.slice(0,100).map(x=>`<div class=card><b>Orden ${esc(x.orden||'—')} · ${esc(x.fecha||'')}</b><small>${esc(x.tipo.replaceAll('_',' '))} · Trafo ${esc(x.trafo||'—')}</small><small>Serie: ${esc(x.serie||'—')} · ID candidato: ${esc(x.id||'—')} ${x.distancia?'· '+esc(x.distancia):''}</small><small>${esc((st.orders.find(o=>o.orden===x.orden)?.materiales||[]).map(m=>m.material+' × '+m.cantidad+(m.serie?' · '+m.serie:'')).join(' | '))}</small></div>`).join('')||'<p class=ms>Sin órdenes.</p>'})
+}
+function vCenso(){m.innerHTML=`<h3>Censo oficial y depuración</h3><p class=ms>Importa las exportaciones oficiales y compara versiones. La serie identifica la luminaria en campo; ID_LUM conserva la referencia administrativa. Ninguna diferencia se aplica automáticamente.</p><div id=censoResultado></div><button data-a=back>Volver a Datos</button>`;cRender()}
+
+A.censoOpen=()=>go('censo');
+A.cImport=cImport;A.cImportOrders=cImportOrders;A.cExport=cExport;A.cShowChanges=cShowChanges;A.cShowOrderMatches=cShowOrderMatches;
 </script>
 </body></html>
