@@ -40,7 +40,7 @@ button:disabled{opacity:.45}
 <script>/* NÚCLEO: estado global, constantes y utilidades puras. */
 /* Interruptores de funciones: false = oculta y sin efecto (el código y los datos guardados se conservan). */
 const FUNCIONES={distanciaReferencia:false,cierreConPendientes:false,revisionSeries:false}; // cierreConPendientes: true permite cerrar un transformador con aviso aunque falten luminarias
-const ESQUEMA=2,APP_VERSION='1.12.6'; // versión con validaciones, importación transaccional y tolerancia a errores // ESQUEMA: versión del contrato de datos (ver docs/ESQUEMA_DATOS.md)
+const ESQUEMA=2,APP_VERSION='1.12.7'; // versión con validaciones, importación transaccional y tolerancia a errores // ESQUEMA: versión del contrato de datos (ver docs/ESQUEMA_DATOS.md)
 const $=s=>document.querySelector(s),m=$('#m');
 let db,S={trafos:[],inv:[],reg:[],proyectos:[],puntos:[],cierres:[],lotes:[],revisiones:[],ultimaExport:'',catMat:[],usuario:''},RM=new Map,V={v:'home',p:null,q:''},d=null,GP=null,ZOOM=0.0008;
 const LBL={coincide:'Coincide',novedad:'Con novedad',no_encontrada:'No encontrada',nueva:'Nueva',otro_trafo:'De otro trafo',sin_serie:'Sin serie'};
@@ -580,7 +580,7 @@ A.areaGeo=()=>{if(!ZONAS)return;const a=document.createElement('a');a.href=URL.c
 
 <script>
 
-/* CENSO OFICIAL: importación XLSX sin conexión, comparación por ID_LUM/serie e historial de órdenes.
+/* CENSO OFICIAL: importación XLSX/CSV sin conexión, comparación por ID_LUM/serie e historial de órdenes.
    Los cambios se guardan como propuestas; nunca sobrescriben el censo de trabajo ni los registros de campo. */
 const CENSO_META='amarres_censo_v1';
 const cNorm=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
@@ -645,8 +645,38 @@ function cSheetRows(sheet){
 async function cReadXlsx(file){
  const sheets=await zipXlsx(await file.arrayBuffer());
  if(!sheets.length)throw Error('El libro no contiene hojas.');
- const parsed=sheets.map(sh=>({name:sh.name,rows:cSheetRows(sh)}));
- return parsed;
+ return sheets.map(sh=>({name:sh.name,rows:cSheetRows(sh)}));
+}
+// Lector CSV para Android y escritorio: detecta separador (; , o tab), BOM UTF-8,
+// comillas escapadas y campos multilínea. Devuelve el mismo formato que el lector XLSX.
+function cParseCsv(text){
+ text=String(text??'').replace(/^\uFEFF/,'');
+ const sample=text.split(/\r?\n/).filter(x=>x.trim()).slice(0,8);
+ const candidates=[';',',','\t'];
+ const countOutside=(line,sep)=>{let q=false,n=0;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"')i++;else q=!q}else if(ch===sep&&!q)n++}return n};
+ const sep=candidates.map(d=>({d,n:sample.reduce((a,l)=>a+countOutside(l,d),0)})).sort((a,b)=>b.n-a.n)[0].d;
+ const rows=[];let row=[],cell='',quoted=false;
+ for(let i=0;i<text.length;i++){
+  const ch=text[i];
+  if(ch==='"'){
+   if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted;
+  }else if(ch===sep&&!quoted){row.push(cell);cell='';}
+  else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(cell);if(row.some(v=>String(v).trim()!==''))rows.push(row);row=[];cell='';}
+  else cell+=ch;
+ }
+ if(quoted)throw Error('El CSV contiene comillas sin cerrar. Vuelve a exportarlo como CSV UTF-8.');
+ if(cell!==''||row.length){row.push(cell);if(row.some(v=>String(v).trim()!==''))rows.push(row)}
+ if(rows.length<2)throw Error('El CSV no contiene encabezados y registros suficientes.');
+ return rows;
+}
+async function cReadDataFile(file){
+ const name=String(file?.name||'').toLowerCase();
+ if(name.endsWith('.csv')||String(file?.type||'').toLowerCase().includes('csv')){
+  const text=await file.text();
+  return [{name:'CSV',rows:cSheetRows({rows:cParseCsv(text)})}];
+ }
+ if(name.endsWith('.xlsx')||String(file?.type||'').includes('spreadsheetml'))return cReadXlsx(file);
+ throw Error('Formato no compatible. Selecciona un archivo .csv o .xlsx.');
 }
 const cCoords=r=>{let lat=cNum(cGet(r,'LATITUD','S_LATITUD')),rawLng=cGet(r,'LONGITUD','S_LONGITUD'),lng=cNum(rawLng);
  if(lng==null&&/^-?\d{1,3}(?:\.\d{3}){2,}$/.test(String(rawLng).trim()))lng=Number(String(rawLng).replace(/\./g,''))/1e10;
@@ -735,12 +765,12 @@ function cRender(){
   const cur=st.current,changes=st.changes||[],sum=cSummary(changes);
   box.innerHTML=`<div class=card><b>Inventario oficial importado</b><small>${cur?esc(cur.fecha)+' · '+cur.luminarias.length+' luminarias · '+cur.trafos.length+' transformadores':'Aún no has importado un inventario oficial.'}</small><small>${st.orders?.length||0} órdenes históricas importadas</small></div>
   ${cur?`<h3>Comparación más reciente</h3><div class=row>${Object.entries(sum).map(([k,v])=>`<span class=chip>${esc(k.replaceAll('_',' '))}: ${v}</span>`).join('')}</div>`:''}
-  <h3>Importar inventario oficial</h3><p class=ms>Selecciona el Excel de luminarias y el de transformadores. La importación crea una nueva versión y compara con la anterior; no modifica el inventario operativo ni los registros de campo.</p>
-  <label>Excel de luminarias (.xlsx)<input id=cLum type=file accept=".xlsx"></label>
-  <label>Excel de transformadores (.xlsx, opcional)<input id=cTrafo type=file accept=".xlsx"></label>
+  <h3>Importar inventario oficial</h3><p class=ms>Selecciona el archivo de luminarias y, si lo tienes, el de transformadores. Se aceptan CSV y Excel. La importación crea una nueva versión y compara con la anterior; no modifica el inventario operativo ni los registros de campo.</p>
+  <label>Excel de luminarias (.xlsx)<input id=cLum type=file accept="*/*" /></label>
+  <label>Archivo de transformadores (.csv o .xlsx, opcional)<input id=cTrafo type=file accept="*/*" /></label>
   <button class=pri data-a=cImport>Importar y comparar inventario</button>
   <h3>Órdenes históricas</h3><p class=ms>Importa el Excel de operación general. Se guardan como antecedentes; no actualizan luminarias automáticamente.</p>
-  <label>Excel de órdenes (.xlsx)<input id=cOrders type=file accept=".xlsx"></label>
+  <label>Archivo de órdenes (.csv o .xlsx)<input id=cOrders type=file accept="*/*" /></label>
   <button data-a=cImportOrders>Importar órdenes</button><div id=cOrderResults></div>
   ${changes.length?`<h3>Detalle de diferencias (${changes.length})</h3><div class=card><button data-a=cExport>Exportar diferencias CSV</button><button data-a=cShowChanges>Ver primeras 100 diferencias</button><div id=cChanges></div></div>`:''}`;
   const oa=cOrderAnalysis(st),ob=$('#cOrderResults');
@@ -748,9 +778,9 @@ function cRender(){
  });
 }
 async function cImport(){
- const lf=$('#cLum')?.files?.[0],tf=$('#cTrafo')?.files?.[0];if(!lf||!tf)return alert('Selecciona el archivo de luminarias. El de transformadores es opcional.');
+ const lf=$('#cLum')?.files?.[0],tf=$('#cTrafo')?.files?.[0];if(!lf)return alert('Selecciona el archivo de luminarias. El de transformadores es opcional.');
  try{
-  const [ls,ts]=await Promise.all([cReadXlsx(lf),tf?cReadXlsx(tf):Promise.resolve([])]);
+  const [ls,ts]=await Promise.all([cReadDataFile(lf),tf?cReadDataFile(tf):Promise.resolve([])]);
   const lsh=ls.find(x=>x.rows.length&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='ID_LUM'))||ls[0];
   const tsh=ts.find(x=>x.rows.length&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='ID_TRAFO'))||ts[0];
   const L=cInventory(lsh.rows,'L'),T=cInventory(tsh.rows,'T');
@@ -765,7 +795,7 @@ async function cImport(){
 async function cImportOrders(){
  const f=$('#cOrders')?.files?.[0];if(!f)return alert('Selecciona el archivo de órdenes.');
  try{
-  const sheets=await cReadXlsx(f),sh=sheets.find(x=>x.rows.length&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='S_NO_REPORTE'))||sheets[0];
+  const sheets=await cReadDataFile(f),sh=sheets.find(x=>x.rows.length&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='S_NO_REPORTE'))||sheets[0];
   const matSh=sheets.find(x=>x.rows.length&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='ORDEN')&&Object.keys(x.rows[0]).some(k=>cNorm(k)==='MATERIAL'));
   const mats=new Map();
   if(matSh)for(const r of matSh.rows){const no=String(cGet(r,'ORDEN')).trim();if(!no)continue;if(!mats.has(no))mats.set(no,[]);mats.get(no).push({material:String(cGet(r,'MATERIAL')).trim(),cantidad:String(cGet(r,'CANTIDAD')).trim(),tipo:String(cGet(r,'TIPO')).trim(),serie:String(cGet(r,'SERIE')).trim(),tecnologia:String(cGet(r,'TECNOLOGIA')).trim(),potencia:String(cGet(r,'POTENCIA')).trim(),codigo:String(cGet(r,'COD MAT')).trim()})}
